@@ -37,6 +37,7 @@
 #include "ob_expr_from_unix_time.h"
 #include "ob_expr_func_partition_key.h"
 #include "ob_expr_greatest.h"
+#include "ob_expr_hello.h"
 #include "ob_expr_host_ip.h"
 #include "ob_expr_trim.h"
 #include "ob_expr_insert.h"
@@ -1037,7 +1038,8 @@ static ObExpr::EvalFunc g_expr_eval_functions[] = {
   ObExprJoinFilter::eval_in_filter,                                   /* 605 */
   ObExprCurrentScn::eval_current_scn,                                 /* 606 */
   ObExprTempTableSSID::calc_temp_table_ssid,                          /* 607 */
-  ObExprAlignDate4Cmp::eval_align_date4cmp,                            /* 608 */
+  ObExprAlignDate4Cmp::eval_align_date4cmp,                           /* 608 */
+  ObExprHello::eval,                                                  /* 609 */                            
 };
 
 static ObExpr::EvalBatchFunc g_expr_eval_batch_functions[] = {
