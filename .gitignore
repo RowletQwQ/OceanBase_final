@@ -1,3 +1,7 @@
+data/
+perf/*.folded
+perf/*.perf
+perf/*.data
 ############# root #############
 *.a
 *.bak
