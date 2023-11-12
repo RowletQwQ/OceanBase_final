@@ -2,6 +2,7 @@ data/
 perf/*.folded
 perf/*.perf
 perf/*.data
+perf/*.data.old
 ############# root #############
 *.a
 *.bak
