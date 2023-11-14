@@ -11,13 +11,15 @@ if [[ -n "$pid" ]]; then
     echo "找到的 PID 是: $pid"
     
     # 使用 pid 作为参数运行 perf record 命令
-    perf record -F 600 -p "$pid" -g -- sleep 100
+    perf record -F 600 -p "$pid" -g -- sleep 95
 
     echo "捕获完成"
     perf script > out.perf
     # 随后生成火焰图
     ./stackcollapse-perf.pl out.perf > out.folded
     ./flamegraph.pl out.folded > kernel.svg
+    # 拷贝到指定路径
+    cp kernel.svg /home/rowlet/Desktop/Log_Analysis/kernel.svg
 else
     echo "未找到匹配的进程"
 fi
