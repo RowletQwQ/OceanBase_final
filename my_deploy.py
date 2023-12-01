@@ -10,6 +10,17 @@ import logging
 import traceback
 
 _logger = logging.getLogger('DeployDemo')
+# 将日志保存到文件中
+handler = logging.FileHandler('deploy.log')
+handler.setLevel(logging.INFO)
+# 创建一个formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# 将formatter添加到handler
+handler.setFormatter(formatter)
+
+# 将handler添加到logger
+_logger.addHandler(handler)
 
 def param_check(args):
     # TODO
@@ -169,10 +180,11 @@ if __name__ == "__main__":
                         zone_name=args.zone,
                         tenant_name=args.tenant_name)
         tenant_end = datetime.datetime.now()
+        _logger.info('create tenant done, %s s' % ((tenant_end - tenant_begin).total_seconds()))
         perf_cmd = f"bash stop_record.sh CREATE_TENANT"
         shell_result = subprocess.run(perf_cmd, shell=True)
-        _logger.info('create tenant done, %s s' % ((tenant_end - tenant_begin).total_seconds()))
-
+        kill_cmd = f"bash kill_ob.sh"
+        shell_result = subprocess.run(kill_cmd, shell=True)
     except mysql.err.Error as e:
         _logger.info("deploy observer failed. ex=%s", str(e))
         _logger.info(traceback.format_exc())
