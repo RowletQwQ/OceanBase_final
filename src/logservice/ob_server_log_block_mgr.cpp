@@ -14,6 +14,8 @@
 #include <fcntl.h>                              // IO operation
 #include <type_traits>                          // decltype
 #include <regex>                                // std::regex
+#include <thread>                               // std::thread
+#include <vector>                               // std::vector
 #include "lib/lock/ob_spin_lock.h"              // ObSpinLockGuard
 #include "lib/ob_define.h"                      // OB_MAX_FILE_NAME_LENGTH
 #include "lib/time/ob_time_utility.h"           // ObTimeUtility
@@ -1089,15 +1091,37 @@ int ObServerLogBlockMgr::allocate_blocks_at_tmp_dir_(const FileDesc &dir_fd,
                                                      const int64_t block_cnt)
 {
   int ret = OB_SUCCESS;
-  int64_t remain_block_cnt = block_cnt;
-  block_id_t block_id = start_block_id;
-  while (OB_SUCC(ret) && remain_block_cnt > 0) {
-    if (OB_FAIL(allocate_block_at_tmp_dir_(dir_fd, block_id))) {
-      CLOG_LOG(ERROR, "allocate_block_at_tmp_dir_ failed", K(ret), KPC(this), K(dir_fd),
-               K(block_id));
-    } else {
-      remain_block_cnt--;
-      block_id++;
+  // int64_t remain_block_cnt = block_cnt;
+  // block_id_t block_id = start_block_id;
+  // while (OB_SUCC(ret) && remain_block_cnt > 0) {
+  //   if (OB_FAIL(allocate_block_at_tmp_dir_(dir_fd, block_id))) {
+  //     CLOG_LOG(ERROR, "allocate_block_at_tmp_dir_ failed", K(ret), KPC(this), K(dir_fd),
+  //              K(block_id));
+  //   } else {
+  //     remain_block_cnt--;
+  //     block_id++;
+  //   }
+  // }
+  std::vector<std::thread> threads;
+  std::vector<int> results(block_cnt, OB_SUCCESS);
+  for (int64_t i = 0; i < block_cnt; ++i) {
+    threads.emplace_back([&, i]() {
+      results[i] = allocate_block_at_tmp_dir_(dir_fd, start_block_id + i);
+      if (OB_SUCCESS != results[i]) {
+        CLOG_LOG(ERROR, "allocate_block_at_tmp_dir_ failed", K(results[i]), KPC(this), K(dir_fd),
+                 K(start_block_id + i));
+      }
+    });
+  }
+  for (auto& t : threads) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+  for (const auto& result : results) {
+    if (OB_SUCCESS != result) {
+      ret = result;
+      break;
     }
   }
   if (-1 == ::fsync(dir_fd)) {
