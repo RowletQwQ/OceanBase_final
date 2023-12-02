@@ -138,27 +138,36 @@ if __name__ == "__main__":
     shell_result = subprocess.run(observer_cmd, shell=True)
     deploy_end = datetime.datetime.now()
     _logger.info('deploy done: %s ms. returncode=%d', (deploy_end - deploy_begin).total_seconds() * 1000,shell_result.returncode)
-
+    # 启动perf
+    os.chdir(args.perf_path)
+    perf_cmd = f"bash start_record.sh"
+    #process = subprocess.Popen(perf_cmd, shell=True)
+    _logger.info('start perf done. returncode=%d', shell_result.returncode)
     time.sleep(2)
     try:
         db = __try_to_connect(args.ip, int(args.mysql_port))
         cursor = db.cursor(cursor=mysql.cursors.DictCursor)
         _logger.info(f'connect to server success! host={args.ip}, port={args.mysql_port}')
-        # 启动perf
-        os.chdir(args.perf_path)
-        perf_cmd = f"bash start_record.sh"
+        # 关闭perf
+        #perf_cmd = f"bash stop_record.sh SERVER_START"
+        #shell_result = subprocess.run(perf_cmd, shell=True)
+        _logger.info('stop perf done. returncode=%d', shell_result.returncode)
         process = subprocess.Popen(perf_cmd, shell=True)
-        _logger.info('start perf done. returncode=%d', shell_result.returncode)
+        
         bootstrap_begin = datetime.datetime.now()
         cursor.execute(f"ALTER SYSTEM BOOTSTRAP ZONE '{args.zone}' SERVER '{rootservice}'")
         bootstrap_end = datetime.datetime.now()
         _logger.info('bootstrap success: %s s' % ((bootstrap_end - bootstrap_begin).total_seconds()))
+        
         # 关闭perf
         perf_cmd = f"bash stop_record.sh BOOTSTRAP"
         shell_result = subprocess.run(perf_cmd, shell=True)
         _logger.info('stop perf done. returncode=%d', shell_result.returncode)
+
         # checkout server status
         checkout_begin = datetime.datetime.now()
+
+        
         _logger.info('checkout server status begin')
         cursor.execute("select * from oceanbase.__all_server")
         server_status = cursor.fetchall()
