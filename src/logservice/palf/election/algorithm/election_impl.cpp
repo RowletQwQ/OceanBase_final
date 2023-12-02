@@ -27,7 +27,7 @@ namespace palf
 namespace election
 {
 
-int64_t MAX_TST = 1_s;
+int64_t MAX_TST = 10_ms; // 单机版本下，直接改小间隔
 int64_t INIT_TS = -1;
 ObOccamTimer GLOBAL_REPORT_TIMER;
 
