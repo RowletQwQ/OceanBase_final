@@ -144,14 +144,14 @@ if __name__ == "__main__":
         # 启动perf
         os.chdir(args.perf_path)
         perf_cmd = f"bash start_record.sh"
-        process = subprocess.Popen(perf_cmd, shell=True)
+        # process = subprocess.Popen(perf_cmd, shell=True)
         db = __try_to_connect(args.ip, int(args.mysql_port))
         cursor = db.cursor(cursor=mysql.cursors.DictCursor)
         _logger.info(f'connect to server success! host={args.ip}, port={args.mysql_port}')
         # 关闭perf
-        perf_cmd = f"bash stop_record.sh SERVER_START"
-        shell_result = subprocess.run(perf_cmd, shell=True)
-        _logger.info('stop perf done. returncode=%d', shell_result.returncode)
+        # perf_cmd = f"bash stop_record.sh SERVER_START"
+        # shell_result = subprocess.run(perf_cmd, shell=True)
+        # _logger.info('stop perf done. returncode=%d', shell_result.returncode)
         process = subprocess.Popen(perf_cmd, shell=True)
         
         bootstrap_begin = datetime.datetime.now()
