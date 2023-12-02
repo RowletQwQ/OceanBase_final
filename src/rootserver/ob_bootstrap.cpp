@@ -591,9 +591,11 @@ int ObBootstrap::execute_bootstrap(rootserver::ObServerZoneOpService &server_zon
   }
   BOOTSTRAP_CHECK_SUCCESS_V2("refresh_schema");
 
+  // 如果rootserver就一个，那当然是自己啊，等啥
   if (FAILEDx(add_servers_in_rs_list(server_zone_op_service))) {
-    LOG_WARN("fail to add servers in rs_list_", KR(ret));
-  } else if (OB_FAIL(wait_all_rs_in_service())) {
+      LOG_WARN("fail to add servers in rs_list_", KR(ret));
+  }
+  else if (rs_list_.count() > 1 && OB_FAIL(wait_all_rs_in_service())) {
     LOG_WARN("failed to wait all rs in service", KR(ret));
   } else {
     ROOTSERVICE_EVENT_ADD("bootstrap", "bootstrap_succeed");
