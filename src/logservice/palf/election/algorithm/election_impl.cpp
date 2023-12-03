@@ -28,6 +28,7 @@ namespace election
 {
 
 int64_t MAX_TST = 50_ms; // 单机版本下，直接改小间隔
+int64_t ELECT_GUARD_TIME = 25_ms; // 全局的TIME_GUARD
 int64_t INIT_TS = -1;
 ObOccamTimer GLOBAL_REPORT_TIMER;
 
@@ -90,7 +91,7 @@ int ElectionImpl::init_and_start(const int64_t id,
                                  const ObFunction<int(const int64_t, const ObAddr &)> &prepare_change_leader_cb,
                                  const ObFunction<void(ElectionImpl *, common::ObRole, common::ObRole, RoleChangeReason)> &role_change_cb)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), KP(msg_handler)
   int ret = OB_SUCCESS;
   CHECK_ELECTION_ARGS(msg_handler, election_timer);
@@ -156,7 +157,7 @@ void ElectionImpl::stop()
 
 int ElectionImpl::set_memberlist(const MemberList &new_memberlist)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(new_memberlist)
   int ret = common::OB_SUCCESS;
   CHECK_ELECTION_ARGS(new_memberlist);
@@ -171,7 +172,7 @@ int ElectionImpl::set_memberlist(const MemberList &new_memberlist)
 
 int ElectionImpl::change_leader_to(const common::ObAddr &dest_addr)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(dest_addr)
   int ret = common::OB_SUCCESS;
   CHECK_ELECTION_ARGS(dest_addr);
@@ -188,7 +189,7 @@ int ElectionImpl::change_leader_to(const common::ObAddr &dest_addr)
 
 int ElectionImpl::set_priority(ElectionPriority *priority)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), KPC(priority)
   int ret = OB_SUCCESS;
   CHECK_ELECTION_ARGS(priority);
@@ -205,7 +206,7 @@ int ElectionImpl::set_priority(ElectionPriority *priority)
 
 int ElectionImpl::reset_priority()
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   LockGuard lock_guard(lock_);
   CHECK_ELECTION_INIT();
   priority_ = nullptr;
@@ -220,7 +221,7 @@ void ElectionImpl::handle_message_base_(const ElectionMsgBase &message_base)
 int ElectionImpl::handle_message(const ElectionPrepareRequestMsg &msg)
 {
   const_cast<ElectionPrepareRequestMsg &>(msg).set_process_ts();
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(msg), K(need_register_devote_task)
   int ret = common::OB_SUCCESS;
   bool need_register_devote_task = false;
@@ -246,7 +247,7 @@ int ElectionImpl::handle_message(const ElectionPrepareRequestMsg &msg)
 int ElectionImpl::handle_message(const ElectionAcceptRequestMsg &msg)
 {
   const_cast<ElectionAcceptRequestMsg &>(msg).set_process_ts();
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(msg), K(us_to_expired)
   int ret = common::OB_SUCCESS;
   int64_t us_to_expired = 0;
@@ -277,7 +278,7 @@ int ElectionImpl::handle_message(const ElectionAcceptRequestMsg &msg)
 int ElectionImpl::handle_message(const ElectionPrepareResponseMsg &msg)
 {
   const_cast<ElectionPrepareResponseMsg &>(msg).set_process_ts();
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   LockGuard lock_guard(lock_);
   handle_message_base_(msg);
@@ -290,7 +291,7 @@ int ElectionImpl::handle_message(const ElectionPrepareResponseMsg &msg)
 int ElectionImpl::handle_message(const ElectionAcceptResponseMsg &msg)
 {
   const_cast<ElectionAcceptResponseMsg &>(msg).set_process_ts();
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   LockGuard lock_guard(lock_);
   handle_message_base_(msg);
@@ -303,7 +304,7 @@ int ElectionImpl::handle_message(const ElectionAcceptResponseMsg &msg)
 int ElectionImpl::handle_message(const ElectionChangeLeaderMsg &msg)
 {
   const_cast<ElectionChangeLeaderMsg &>(msg).set_process_ts();
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   LockGuard lock_guard(lock_);
   handle_message_base_(msg);
@@ -322,7 +323,7 @@ ElectionPriority *ElectionImpl::get_priority_() const { return priority_; }
 
 void ElectionImpl::refresh_priority_()
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   if (inner_priority_seed_ & static_cast<uint64_t>(PRIORITY_SEED_BIT::SEED_NOT_NORMOL_REPLICA_BIT)) {
     // do nothing
@@ -335,20 +336,20 @@ void ElectionImpl::refresh_priority_()
 
 bool ElectionImpl::is_member_list_valid_() const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   return proposer_.memberlist_with_states_.get_member_list().is_valid();
 }
 
 LogConfigVersion ElectionImpl::get_membership_version_() const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   return proposer_.memberlist_with_states_.get_member_list().get_membership_version();
 }
 
 int ElectionImpl::broadcast_(const ElectionPrepareRequestMsg &msg,
                              const common::ObArray<common::ObAddr> &list) const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(msg)
   int ret = common::OB_SUCCESS;
   if (CLICK_FAIL(msg_handler_->broadcast(msg, list))) {
@@ -366,7 +367,7 @@ int ElectionImpl::broadcast_(const ElectionPrepareRequestMsg &msg,
 int ElectionImpl::broadcast_(const ElectionAcceptRequestMsg &msg,
                              const common::ObArray<common::ObAddr> &list) const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(msg)
   int ret = common::OB_SUCCESS;
   if (CLICK_FAIL(msg_handler_->broadcast(msg, list))) {
@@ -383,7 +384,7 @@ int ElectionImpl::broadcast_(const ElectionAcceptRequestMsg &msg,
 
 int ElectionImpl::send_(const ElectionPrepareResponseMsg &msg) const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(msg)
   int ret = common::OB_SUCCESS;
   if (CLICK_FAIL(msg_handler_->send(msg))) {
@@ -397,7 +398,7 @@ int ElectionImpl::send_(const ElectionPrepareResponseMsg &msg) const
 
 int ElectionImpl::send_(const ElectionAcceptResponseMsg &msg) const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(msg)
   int ret = common::OB_SUCCESS;
   if (CLICK_FAIL(msg_handler_->send(msg))) {
@@ -411,7 +412,7 @@ int ElectionImpl::send_(const ElectionAcceptResponseMsg &msg) const
 
 int ElectionImpl::send_(const ElectionChangeLeaderMsg &msg) const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this), K(msg)
   int ret = common::OB_SUCCESS;
   if (CLICK_FAIL(msg_handler_->send(msg))) {
@@ -425,7 +426,7 @@ int ElectionImpl::send_(const ElectionChangeLeaderMsg &msg) const
 
 int ElectionImpl::revoke(const RoleChangeReason &reason)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   LockGuard lock_guard(lock_);
   CHECK_ELECTION_INIT();
@@ -437,7 +438,7 @@ int ElectionImpl::add_inner_priority_seed_bit(const PRIORITY_SEED_BIT new_bit)
 {
   #define PRINT_WRAPPER KR(ret), K(*this), K(new_bit)
   int ret = OB_SUCCESS;
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   LockGuard lock_guard(lock_);
   CLICK();
   CHECK_ELECTION_INIT();
@@ -455,7 +456,7 @@ int ElectionImpl::clear_inner_priority_seed_bit(const PRIORITY_SEED_BIT old_bit)
 {
   #define PRINT_WRAPPER KR(ret), K(*this), K(old_bit)
   int ret = OB_SUCCESS;
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   LockGuard lock_guard(lock_);
   CLICK();
   CHECK_ELECTION_INIT();
@@ -472,7 +473,7 @@ int ElectionImpl::clear_inner_priority_seed_bit(const PRIORITY_SEED_BIT old_bit)
 int ElectionImpl::set_inner_priority_seed(const uint64_t seed)
 {
   int ret = OB_SUCCESS;
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   LockGuard lock_guard(lock_);
   CLICK();
   inner_priority_seed_ = seed;
