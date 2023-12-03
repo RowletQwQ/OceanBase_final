@@ -170,6 +170,8 @@ int ObLSLeaderElectionWaiter::wait_elect_leader(
              K(check_interval), K(abs_timeout));
   } else {
     int64_t sleep_interval = std::max(1l, check_interval / 100);
+    LOG_INFO("Going to wait elect leader", K(tenant_id), K(ls_id),
+             K(check_interval), K(abs_timeout));
     while (!stop_) {
       const int64_t cluster_id = GCONF.cluster_id;
       if (OB_FAIL(lst_operator_.get(cluster_id, tenant_id,

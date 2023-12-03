@@ -1131,7 +1131,7 @@ int ObBootstrap::batch_create_schema(ObDDLService &ddl_service,
               "table_name", table.get_table_name());
         } else {
           int64_t end_time = ObTimeUtility::current_time();
-          LOG_INFO("add table schema succeed", K(i),
+          LOG_INFO("[ALL_TABLE_INFO] add table schema succeed", K(i),
               "table_id", table.get_table_id(),
               "table_name", table.get_table_name(), 
               "core_table", is_core_table(table.get_table_id()),
