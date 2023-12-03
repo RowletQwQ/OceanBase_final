@@ -128,13 +128,13 @@ if __name__ == "__main__":
     shell_result = subprocess.run(observer_cmd, shell=True)
     deploy_end = datetime.datetime.now()
     _logger.info('deploy done: %s ms. return code %d', (deploy_end - deploy_begin).total_seconds() * 1000, shell_result.returncode)
-    a = input('press any key to continue')
     time.sleep(2)
     try:
         _logger.info('try to connect to server')
         db = __try_to_connect(args.ip, int(args.mysql_port))
         cursor = db.cursor(cursor=mysql.cursors.DictCursor)
         _logger.info(f'connect to server success! host={args.ip}, port={args.mysql_port}')
+        a = input('press any key to continue')
         # 启动perf
         os.chdir(args.perf_path)
         perf_cmd = f"bash start_record.sh"
