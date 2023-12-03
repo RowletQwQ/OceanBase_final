@@ -27,7 +27,7 @@ namespace palf
 namespace election
 {
 using namespace share;
-
+static int64_t ELECT_GUARD_TIME = 25_ms;
 OB_SERIALIZE_MEMBER(Lease, owner_, lease_end_ts_, ballot_number_);
 
 MemberListWithStates::MemberListWithStates()
@@ -61,7 +61,7 @@ MemberListWithStates::~MemberListWithStates()
 
 int MemberListWithStates::set_member_list(const MemberList &new_member_list)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER K(new_member_list), K(*this)
   int ret = OB_SUCCESS;
   bool only_membership_version_different = false;
@@ -141,7 +141,7 @@ void MemberListWithStates::clear_prepare_and_accept_states()
 
 int MemberListWithStates::record_prepare_ok(const ElectionPrepareResponseMsg &prepare_res)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   #define PRINT_WRAPPER KR(ret), K(*this)
   int ret = OB_SUCCESS;
   int64_t idx = 0;
@@ -163,7 +163,7 @@ int MemberListWithStates::record_prepare_ok(const ElectionPrepareResponseMsg &pr
 
 int MemberListWithStates::record_accept_ok(const ElectionAcceptResponseMsg &accept_res)
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   int64_t idx = 0;
   if (OB_ISNULL(p_impl_)) {
@@ -194,7 +194,7 @@ int MemberListWithStates::record_accept_ok(const ElectionAcceptResponseMsg &acce
 
 int MemberListWithStates::get_majority_promised_not_vote_ts(int64_t &ts) const
 {
-  ELECT_TIME_GUARD(500_ms);
+  ELECT_TIME_GUARD(ELECT_GUARD_TIME);
   int ret = OB_SUCCESS;
   if (OB_ISNULL(p_impl_)) {
     ret = OB_NOT_INIT;
