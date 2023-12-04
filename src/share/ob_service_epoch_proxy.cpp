@@ -36,6 +36,7 @@ int ObServiceEpochProxy::init_service_epoch(
     const int64_t server_zone_op_service_epoch,
     const int64_t heartbeat_service_epoch)
 {
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.7 start init_service_epoch");
   int ret = OB_SUCCESS;
   if (is_user_tenant(tenant_id)) {
     ret = OB_INVALID_ARGUMENT;
@@ -96,6 +97,7 @@ int ObServiceEpochProxy::init_service_epoch(
       LOG_WARN("fail to init arb service epoch", KR(ret), K(user_tenant_id), K(arbitration_service_epoch));
     } else {}
   } else {}
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.7 finish init_service_epoch");
   return ret;
 }
 

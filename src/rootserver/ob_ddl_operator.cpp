@@ -215,6 +215,7 @@ int ObDDLOperator::insert_tenant_merge_info(
     const ObTenantSchema &tenant_schema,
     ObMySQLTransaction &trans)
 {
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.6 start insert_tenant_merge_info");
   int ret = OB_SUCCESS;
   const uint64_t tenant_id = tenant_schema.get_tenant_id();
   if (is_sys_tenant(tenant_id) || is_meta_tenant(tenant_id)) {
@@ -267,6 +268,7 @@ int ObDDLOperator::insert_tenant_merge_info(
       }
     }
   }
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.6 finish insert_tenant_merge_info");
 
   return ret;
 }
@@ -5129,7 +5131,7 @@ int ObDDLOperator::init_tenant_env(
 {
   int ret = OB_SUCCESS;
   const uint64_t tenant_id = tenant_schema.get_tenant_id();
-
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.5 start init_tenant_env");
   if (OB_UNLIKELY(!recovery_until_scn.is_valid_and_not_min())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid recovery_until_scn", KR(ret), K(recovery_until_scn));
@@ -5179,7 +5181,7 @@ int ObDDLOperator::init_tenant_env(
       LOG_WARN("failed to init tenant info", KR(ret), K(tenant_info));
     }
   }
-
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.5 end init_tenant_env");
   return ret;
 }
 

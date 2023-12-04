@@ -9,7 +9,8 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
  */
-
+#include <thread>
+#include <vector>
 #define USING_LOG_PREFIX RS
 #include "rootserver/ob_ddl_service.h"
 
@@ -23138,7 +23139,7 @@ int ObDDLService::init_tenant_schema(
           LOG_WARN("failed to set tenant config version", KR(ret), K(user_tenant_id));
         }
       }
-
+      LOG_INFO("[CREATE_TENANT] STEP 2.4.2.9 start get sys ls info by operator");
       ObLSInfo sys_ls_info;
       ObAddrArray addrs;
       if (FAILEDx(GCTX.lst_operator_->get(
@@ -23181,6 +23182,7 @@ int ObDDLService::set_log_restore_source(
     const common::ObString &log_restore_source,
     common::ObMySQLTransaction &trans)
 {
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.8 start set_log_restore_source");
   int ret = OB_SUCCESS;
   share::ObBackupConfigParserMgr config_parser_mgr;
   common::ObSqlString name;
@@ -23200,6 +23202,7 @@ int ObDDLService::set_log_restore_source(
   } else if (OB_FAIL(config_parser_mgr.update_inner_config_table(*rpc_proxy_, trans))) {
     LOG_WARN("fail to update inner config table", KR(ret), K(name), K(value));
   }
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.8 finish set_log_restore_source");
   return ret;
 }
 
@@ -23208,6 +23211,7 @@ int ObDDLService::create_sys_table_schemas(
     ObMySQLTransaction &trans,
     common::ObIArray<ObTableSchema> &tables)
 {
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 start create_sys_table_schemas");
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("variable is not init", KR(ret));
@@ -23217,6 +23221,144 @@ int ObDDLService::create_sys_table_schemas(
     LOG_WARN("ptr is null", KR(ret), KP_(sql_proxy), KP_(schema_service));
   } else {
     // persist __all_core_table's schema in inner table, which is only used for sys views.
+    
+    // // 将table分为三类
+    // common::ObArray<int64_t> basic_table;
+    // common::ObArray<int64_t> idx_table;
+    // common::ObArray<int64_t> lob_table;
+    // for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); i++) {
+    //   ObTableSchema &table = tables.at(i);
+    //   const int64_t table_id = table.get_table_id();
+    //   if(is_sys_index_table(table_id)) {
+    //     if (OB_FAIL(idx_table.push_back(i))) {
+    //       LOG_WARN("fail to push back index table id", KR(ret), K(table_id));
+    //     }
+    //   } else if (is_sys_lob_table(table_id)) {
+    //     if (OB_FAIL(lob_table.push_back(i))) {
+    //       LOG_WARN("fail to push back lob table id", KR(ret), K(table_id));
+    //     }
+    //   } else {
+    //     if (OB_FAIL(basic_table.push_back(i))) {
+    //       LOG_WARN("fail to push back basic table id", KR(ret), K(table_id));
+    //     }
+    //   }
+    // }
+    // // 随后并发，先新建basic_table
+    // std::vector<std::thread> basic_table_th,idx_table_th,lob_table_th;
+    // basic_table_th.reserve(basic_table.count());
+    // idx_table_th.reserve(idx_table.count());
+    // lob_table_th.reserve(lob_table.count());
+    // std::vector<int> basic_result,idx_result,lob_result;
+    
+    // // 先处理basic
+    // for (int64_t i = 0; OB_SUCC(ret) && i < basic_table.count(); i++) {
+    //   int64_t table_idx = basic_table.at(i);
+    //   basic_result.emplace_back(OB_SUCCESS);
+    //   basic_table_th.emplace_back([&,i,table_idx](){
+    //     lib::set_thread_name("create_sys_table_schemas");
+    //     int tmp_ret = OB_SUCCESS;
+    //     ObTableSchema &table = tables.at(table_idx);
+    //     const int64_t table_id = table.get_table_id();
+    //     const ObString &table_name = table.get_table_name();
+    //     const ObString *ddl_stmt = NULL;
+    //     bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+    //                                     is_sys_lob_table(table_id));
+    //     if (OB_TMP_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+    //                                         need_sync_schema_version,
+    //                                         false /*is_truncate_table*/))) {
+    //       LOG_WARN("add basic table schema failed", KR(ret), K(table_id), K(table_name));
+    //     } else {
+    //       LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add basic table schema succeed", K(i), K(table_id), K(table_name));
+    //     }
+    //     basic_result[i] = tmp_ret;
+    //   });
+    // }
+    // // 并发等待basic_table结束
+    // for (auto &t : basic_table_th) {
+    //   if(t.joinable()) {
+    //     t.join();
+    //   }
+    // }
+    // for (const auto& result : basic_result) {
+    //   if (OB_SUCCESS != result) {
+    //     ret = result;
+    //     break;
+    //   }
+    // }
+    // LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] basic table add finish", KR(ret));
+
+    // for (int64_t i = 0; OB_SUCC(ret) && i < idx_table.count(); i++) {
+    //   int64_t table_idx = idx_table.at(i);
+    //   idx_result.emplace_back(OB_SUCCESS);
+    //   idx_table_th.emplace_back([&,i,table_idx](){
+    //     lib::set_thread_name("create_sys_table_schemas");
+    //     int tmp_ret = OB_SUCCESS;
+    //     ObTableSchema &table = tables.at(table_idx);
+    //     const int64_t table_id = table.get_table_id();
+    //     const ObString &table_name = table.get_table_name();
+    //     const ObString *ddl_stmt = NULL;
+    //     bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+    //                                     is_sys_lob_table(table_id));
+    //     if (OB_TMP_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+    //                                         need_sync_schema_version,
+    //                                         false /*is_truncate_table*/))) {
+    //       LOG_WARN("add idx table schema failed", KR(ret), K(table_id), K(table_name));
+    //     } else {
+    //       LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add idx table schema succeed", K(i), K(table_id), K(table_name));
+    //     }
+    //     idx_result[i] = tmp_ret;
+    //   });
+    // }
+    // // 并发等待idx_table结束
+    // for (auto &t : idx_table_th) {
+    //   if(t.joinable()) {
+    //     t.join();
+    //   }
+    // }
+    
+    // for (const auto& result : idx_result) {
+    //   if (OB_SUCCESS != result) {
+    //     ret = result;
+    //     break;
+    //   }
+    // }
+    // LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] idx table add finish", KR(ret));
+    // for (int64_t i = 0; OB_SUCC(ret) && i < lob_table.count(); i++) {
+    //   int64_t table_idx = lob_table.at(i);
+    //   lob_result.emplace_back(OB_SUCCESS);
+    //   lob_table_th.emplace_back([&,i,table_idx](){
+    //     lib::set_thread_name("create_sys_table_schemas");
+    //     int tmp_ret = OB_SUCCESS;
+    //     ObTableSchema &table = tables.at(table_idx);
+    //     const int64_t table_id = table.get_table_id();
+    //     const ObString &table_name = table.get_table_name();
+    //     const ObString *ddl_stmt = NULL;
+    //     bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+    //                                     is_sys_lob_table(table_id));
+    //     if (OB_TMP_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+    //                                         need_sync_schema_version,
+    //                                         false /*is_truncate_table*/))) {
+    //       LOG_WARN("add lob table schema failed", KR(ret), K(table_id), K(table_name));
+    //     } else {
+    //       LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add lob table schema succeed", K(i), K(table_id), K(table_name));
+    //     }
+    //     lob_result[i] = tmp_ret;
+    //   });
+    // }
+    // // 并发等待lob_table结束
+    // for (auto &t : lob_table_th) {
+    //   if(t.joinable()) {
+    //     t.join();
+    //   }
+    // }
+    
+    // for (const auto& result : lob_result) {
+    //   if (OB_SUCCESS != result) {
+    //     ret = result;
+    //     break;
+    //   }
+    // }
+    // LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] lob table add finish", KR(ret));
     for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); i++) {
       ObTableSchema &table = tables.at(i);
       const int64_t table_id = table.get_table_id();
@@ -23232,6 +23374,7 @@ int ObDDLService::create_sys_table_schemas(
         LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add table schema succeed", K(i), K(table_id), K(table_name));
       }
     }
+    LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_sys_table_schemas");
   }
   return ret;
 }
@@ -23239,6 +23382,7 @@ int ObDDLService::create_sys_table_schemas(
 
 int ObDDLService::set_sys_ls_status(const uint64_t tenant_id)
 {
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.3 start set_sys_ls_status");
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("variable is not init", KR(ret));
@@ -23259,6 +23403,7 @@ int ObDDLService::set_sys_ls_status(const uint64_t tenant_id)
       LOG_WARN("failed to insert new ls", KR(ret), K(new_ls), K(ls_group_id));
     }
   }
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.3 finish set_sys_ls_status");
   return ret;
 }
 
