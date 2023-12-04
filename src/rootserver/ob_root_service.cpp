@@ -623,7 +623,7 @@ int ObRsStatus::set_rs_status(const status::ObRootServiceStatus status)
 
 ////////////////////////////////////////////////////////////////
 ObRootService::ObRootService()
-: inited_(false), server_refreshed_(false),
+: inited_(false), is_executed_bootstrap_(false),server_refreshed_(false),
     debug_(false),
     self_addr_(), config_(NULL), config_mgr_(NULL),
     rpc_proxy_(), common_proxy_(), sql_proxy_(), restore_ctx_(NULL), rs_mgr_(NULL),
@@ -2024,6 +2024,7 @@ int ObRootService::execute_bootstrap(const obrpc::ObBootstrapArg &arg)
     ret = OB_SUCC(ret) ? tmp_ret : ret;
   }
   BOOTSTRAP_LOG(INFO, "execute_bootstrap finished", K(ret));
+  this->is_executed_bootstrap_ = true;
   return ret;
 }
 
@@ -4989,9 +4990,8 @@ int ObRootService::do_restart()
     if (OB_SUCCESS != tmp_ret) {
       FLOG_WARN("renew master rootservice failed", KR(tmp_ret));
       // 快速返回，释放锁
-      // if (tmp_ret == OB_RS_NOT_MASTER) {
-      return tmp_ret;
-      // }
+      if(!this->is_executed_bootstrap_)
+        return tmp_ret;
       
     }
   }

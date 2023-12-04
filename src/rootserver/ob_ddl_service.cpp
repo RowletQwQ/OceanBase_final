@@ -23229,7 +23229,7 @@ int ObDDLService::create_sys_table_schemas(
                                             false /*is_truncate_table*/))) {
         LOG_WARN("add table schema failed", KR(ret), K(table_id), K(table_name));
       } else {
-        LOG_INFO("add table schema succeed", K(i), K(table_id), K(table_name));
+        LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add table schema succeed", K(i), K(table_id), K(table_name));
       }
     }
   }
@@ -23320,6 +23320,7 @@ int ObDDLService::create_tenant_end(const uint64_t tenant_id)
   } else if (OB_FAIL(new_tenant_schema.assign(*tenant_schema))) {
     LOG_WARN("fail to assign tenant schema", KR(ret));
   } else {
+    LOG_INFO("[CREATE_TENANT] STEP 3.1. check state complete, start trans", K(tenant_id));
     ObDDLSQLTransaction tenant_trans(schema_service_);
     ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
     int64_t refreshed_schema_version = OB_INVALID_VERSION;
