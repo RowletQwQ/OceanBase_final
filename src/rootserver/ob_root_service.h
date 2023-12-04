@@ -895,6 +895,7 @@ private:
   static const int64_t OB_MAX_CLUSTER_REPLICA_COUNT = 10000000;
   static const int64_t OB_ROOT_SERVICE_START_FAIL_COUNT_UPPER_LIMIT = 5;
   bool inited_;
+  bool is_executed_bootstrap_;
   volatile bool server_refreshed_; // server manager reload and force request heartbeat
   // use mysql server backend for debug.
   bool debug_;
