@@ -1,10 +1,10 @@
 echo "Deploying"
 # 1. 本地工作目录
-export OB_WORKSPACE=/mnt/WorkSpace/OceanBase_final
+export OB_WORKSPACE=/root/source/OceanBase_final
 # 2. oceanbase部署目录
 export OCEANBASE_HOME=/mnt/WorkSpace/oceanbase
 # 3. python环境目录
-export PYTHON_HOME=/usr/local/anaconda3/bin
+export PYTHON_HOME=/usr/bin
 $PYTHON_HOME/python my_deploy.py --clean --cluster-home-path $OCEANBASE_HOME
 # 然后把编译好的文件复制粘贴到对应工作目录
 rm $OCEANBASE_HOME/bin/observer

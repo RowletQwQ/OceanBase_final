@@ -4988,6 +4988,11 @@ int ObRootService::do_restart()
     int tmp_ret = rs_mgr_->renew_master_rootserver();
     if (OB_SUCCESS != tmp_ret) {
       FLOG_WARN("renew master rootservice failed", KR(tmp_ret));
+      // 快速返回，释放锁
+      // if (tmp_ret == OB_RS_NOT_MASTER) {
+      return tmp_ret;
+      // }
+      
     }
   }
 

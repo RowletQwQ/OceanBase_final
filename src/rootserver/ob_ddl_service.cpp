@@ -23028,6 +23028,7 @@ int ObDDLService::init_tenant_schema(
     LOG_WARN("ptr is null", KR(ret), KP_(sql_proxy), KP_(schema_service), KP(GCTX.lst_operator_));
   } else {
     ObSchemaService *schema_service_impl = schema_service_->get_schema_service();
+    LOG_INFO("[CREATE_TENANT] STEP 2.4.1. start init tenant global stat", K(tenant_id));
     // 1. init tenant global stat
     if (OB_SUCC(ret)) {
       const int64_t core_schema_version = OB_CORE_SCHEMA_VERSION + 1;
@@ -23078,7 +23079,7 @@ int ObDDLService::init_tenant_schema(
         }
       }
     }
-
+    LOG_INFO("[CREATE_TENANT] STEP 2.4.2. start init tenant schema", K(tenant_id));
     // 2. init tenant schema
     if (OB_SUCC(ret)) {
       ObDDLSQLTransaction trans(schema_service_, true, true, false, false);
@@ -23153,7 +23154,7 @@ int ObDDLService::init_tenant_schema(
         LOG_WARN("fail to publish schema", KR(ret), K(tenant_id), K(addrs));
       }
     }
-
+    LOG_INFO("[CREATE_TENANT] STEP 2.4.3. start set baseline schema version", K(tenant_id));
     // 3. set baseline schema version
     if (OB_SUCC(ret)) {
       ObGlobalStatProxy global_stat_proxy(*sql_proxy_, tenant_id);

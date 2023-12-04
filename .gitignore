@@ -3,6 +3,7 @@ perf/*.folded
 perf/*.perf
 perf/*.data
 perf/*.data.old
+perf/*.svg
 ############# root #############
 *.a
 *.bak

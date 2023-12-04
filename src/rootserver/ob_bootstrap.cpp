@@ -12,6 +12,11 @@
 
 #define USING_LOG_PREFIX BOOTSTRAP
 
+// 先用std::thread测试可行性
+#include <thread>
+#include <vector>
+
+
 #include "rootserver/ob_bootstrap.h"
 
 #include "share/ob_define.h"
@@ -591,9 +596,11 @@ int ObBootstrap::execute_bootstrap(rootserver::ObServerZoneOpService &server_zon
   }
   BOOTSTRAP_CHECK_SUCCESS_V2("refresh_schema");
 
+  // 如果rootserver就一个，那当然是自己啊，等啥
   if (FAILEDx(add_servers_in_rs_list(server_zone_op_service))) {
-    LOG_WARN("fail to add servers in rs_list_", KR(ret));
-  } else if (OB_FAIL(wait_all_rs_in_service())) {
+      LOG_WARN("fail to add servers in rs_list_", KR(ret));
+  }
+  else if (rs_list_.count() > 1 && OB_FAIL(wait_all_rs_in_service())) {
     LOG_WARN("failed to wait all rs in service", KR(ret));
   } else {
     ROOTSERVICE_EVENT_ADD("bootstrap", "bootstrap_succeed");
@@ -965,29 +972,82 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
 
     int64_t begin = 0;
     int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
+    int64_t thread_pos = 0;
+    // int64_t thread_cnt = 0;
     const int64_t MAX_RETRY_TIMES = 3;
-    for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
+    std::vector<std::thread> threads;
+    std::vector<int> results((table_schemas.count() + batch_count - 1) / batch_count, OB_SUCCESS);
+  //   for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
+  //     if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
+  //       int64_t retry_times = 1;
+  //       while (OB_SUCC(ret)) {
+  //         if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i + 1))) {
+  //           LOG_WARN("batch create schema failed", K(ret), "table count", i + 1 - begin);
+  //           // bugfix:
+  //           if ((OB_SCHEMA_EAGAIN == ret
+  //                || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == ret)
+  //               && retry_times <= MAX_RETRY_TIMES) {
+  //             retry_times++;
+  //             ret = OB_SUCCESS;
+  //             LOG_INFO("schema error while create table, need retry", KR(ret), K(retry_times));
+  //             ob_usleep(1 * 1000 * 1000L); // 1s
+  //           }
+  //         } else {
+  //           break;
+  //         }
+  //       }
+  //       if (OB_SUCC(ret)) {
+  //         begin = i + 1;
+  //       }
+  //     }
+  //   }
+  // }
+    for (int64_t i = 0; i < table_schemas.count(); ++i) {
       if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
-        int64_t retry_times = 1;
-        while (OB_SUCC(ret)) {
-          if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i + 1))) {
-            LOG_WARN("batch create schema failed", K(ret), "table count", i + 1 - begin);
-            // bugfix:
-            if ((OB_SCHEMA_EAGAIN == ret
-                 || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == ret)
-                && retry_times <= MAX_RETRY_TIMES) {
-              retry_times++;
-              ret = OB_SUCCESS;
-              LOG_INFO("schema error while create table, need retry", KR(ret), K(retry_times));
-              ob_usleep(1 * 1000 * 1000L); // 1s
+        LOG_INFO("start batch_create_schema", K(begin), K(i + 1), K(thread_pos));
+        threads.emplace_back([&, i, begin, thread_pos]() {
+          lib::set_thread_name("batch_create_schema_sub_thread");
+          int64_t retry_times = 1;
+          while (OB_SUCC(results[thread_pos])) {
+            if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i + 1))) {
+                LOG_WARN("batch create schema failed", K(results[thread_pos]), "table count", i + 1);
+              if ((OB_SCHEMA_EAGAIN == results[thread_pos]
+                  || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == results[thread_pos])
+                  && retry_times <= MAX_RETRY_TIMES) {
+                retry_times++;
+                results[thread_pos] = OB_SUCCESS;
+                LOG_INFO("schema error while create table, need retry", KR(results[thread_pos]), K(retry_times));
+                ob_usleep(1 * 1000 * 1000L); // 1s
+              }
+            } else {
+              break;
             }
-          } else {
-            break;
           }
-        }
-        if (OB_SUCC(ret)) {
-          begin = i + 1;
-        }
+        });
+        begin = i + 1;
+        thread_pos++;
+        // thread_cnt++;
+      }
+      // if (thread_cnt >= 7) {
+      //   for (auto& t : threads) {
+      //     if (t.joinable()) {
+      //       t.join();
+      //     }
+      //   }
+      //   thread_cnt = 0;
+      //   threads.clear();
+      // }
+    }
+    for (auto& t : threads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+    ret = OB_SUCCESS;
+    for (const auto& result : results) {
+      if (OB_SUCCESS != result) {
+        ret = result;
+        break;
       }
     }
   }
@@ -1016,6 +1076,9 @@ int ObBootstrap::batch_create_schema(ObDDLService &ddl_service,
                             refreshed_schema_version))) {
       LOG_WARN("start transaction failed", KR(ret));
     } else {
+      // std::vector<std::thread> threads;
+      // std::vector<int> results;
+      // results.reserve(end - begin);
       bool is_truncate_table = false;
       for (int64_t i = begin; OB_SUCC(ret) && i < end; ++i) {
         ObTableSchema &table = table_schemas.at(i);
@@ -1023,6 +1086,43 @@ int ObBootstrap::batch_create_schema(ObDDLService &ddl_service,
         bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table.get_table_id()) ||
                                           is_sys_lob_table(table.get_table_id()));
         int64_t start_time = ObTimeUtility::current_time();
+        // 如果不需要need_sync_schema_version,就并发
+        // if (!need_sync_schema_version) {
+        //   int64_t result_pos = results.size();
+        //   LOG_INFO("start thread from batch_create_schema", K(i), K(result_pos),
+        //       "table_id", table.get_table_id(),
+        //       "table_name", table.get_table_name(), 
+        //       "core_table", is_core_table(table.get_table_id()),
+        //       "need_sync_schema_version", need_sync_schema_version
+        //     );
+        //   results.push_back(OB_SUCCESS);
+        //   threads.emplace_back([&, i, result_pos, start_time]() {
+        //     ObTableSchema &this_table = table_schemas.at(i);
+        //     lib::set_thread_name("batch_create_schema_sub_thread");
+        //     // set_thread_name_inner("batch_create_schema_sub_thread");
+        //     int tmp_ret = OB_SUCCESS;
+        //     if (OB_TMP_FAIL(ddl_operator.create_table(this_table, trans, ddl_stmt,
+        //                                       need_sync_schema_version,
+        //                                       is_truncate_table))) {
+        //       LOG_WARN("add table schema failed", K(tmp_ret),
+        //       "table_id", this_table.get_table_id(),
+        //       "table_name", this_table.get_table_name(),
+        //       "core_table", is_core_table(this_table.get_table_id()),
+        //       "need_sync_schema_version", need_sync_schema_version
+        //       );
+        //     } else {
+        //       int64_t end_time = ObTimeUtility::current_time();
+        //       LOG_INFO("add table schema succeed", K(i),
+        //       "table_id", this_table.get_table_id(),
+        //       "table_name", this_table.get_table_name(), 
+        //       "core_table", is_core_table(this_table.get_table_id()),
+        //       "need_sync_schema_version", need_sync_schema_version, 
+        //       "cost", end_time-start_time);
+        //     }
+        //     results[result_pos] = tmp_ret;
+        //   });
+        //   continue;
+        // }
         if (OB_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
                                               need_sync_schema_version,
                                               is_truncate_table))) {
@@ -1031,11 +1131,27 @@ int ObBootstrap::batch_create_schema(ObDDLService &ddl_service,
               "table_name", table.get_table_name());
         } else {
           int64_t end_time = ObTimeUtility::current_time();
-          LOG_INFO("add table schema succeed", K(i),
+          LOG_INFO("[ALL_TABLE_INFO] add table schema succeed", K(i),
               "table_id", table.get_table_id(),
-              "table_name", table.get_table_name(), "core_table", is_core_table(table.get_table_id()), "cost", end_time-start_time);
+              "table_name", table.get_table_name(), 
+              "core_table", is_core_table(table.get_table_id()),
+              "need_sync_schema_version", need_sync_schema_version, 
+              "cost", end_time-start_time);
         }
       }
+      // // 等待threads结束
+      // for (auto& t : threads) {
+      //   if (t.joinable()) {
+      //     t.join();
+      //   }
+      // }
+      // // 检查结果
+      // for (const auto& result : results) {
+      //   if (OB_SUCCESS != result) {
+      //     ret = result;
+      //     break;
+      //   }
+      // }
     }
   }
 
