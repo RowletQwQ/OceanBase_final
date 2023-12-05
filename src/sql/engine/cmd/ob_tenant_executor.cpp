@@ -99,7 +99,7 @@ int ObCreateTenantExecutor::execute(ObExecContext &ctx, ObCreateTenantStmt &stmt
   } else if (OB_INVALID_ID != tenant_id) {
     // try refresh schema and wait ls valid
     // 这里直接并发，单独开一个线程来处理这些事情
-    std::thread thread([&,tenant_id](){
+    // std::thread thread([&,tenant_id](){
       int tmp_ret = OB_SUCCESS;
       lib::set_thread_name("WaitLsValid");
       if (OB_TMP_FAIL(wait_schema_refreshed_(tenant_id))) {
@@ -107,8 +107,8 @@ int ObCreateTenantExecutor::execute(ObExecContext &ctx, ObCreateTenantStmt &stmt
       } else if (OB_TMP_FAIL(wait_user_ls_valid_(tenant_id))) {
         LOG_WARN("failed to wait user ls valid, but ignore", KR(tmp_ret), K(tenant_id));
       }
-    });
-    thread.detach();
+    // });
+    // thread.detach();
   }
   LOG_INFO("[CREATE_TENANT] create tenant", KR(ret), K(create_tenant_arg),
            "cost", ObTimeUtility::current_time() - start_ts);
