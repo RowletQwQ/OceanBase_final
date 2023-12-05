@@ -470,6 +470,7 @@ int ObPrimaryLSService::process_all_ls_status_to_steady_(const share::schema::Ob
 //the interface may reentry
 int ObPrimaryLSService::create_ls_for_create_tenant()
 {
+  LOG_INFO("[CREATE_LS_FOR_CREATE_TENANT] start create ls for create tenant", K(tenant_id_));
   int ret = OB_SUCCESS;
   share::schema::ObTenantSchema tenant_schema;
   ObArray<ObZone> primary_zone;
@@ -525,6 +526,7 @@ int ObPrimaryLSService::create_ls_for_create_tenant()
     }
     END_TRANSACTION(trans)
   }
+  LOG_INFO("[CREATE_LS_FOR_CREATE_TENANT] end create ls for create tenant", K(tenant_id_));
   return ret;
 }
 

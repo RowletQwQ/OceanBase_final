@@ -970,13 +970,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
       }
     }
 
-    int64_t begin = 0;
-    int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
-    int64_t thread_pos = 0;
-    // int64_t thread_cnt = 0;
-    const int64_t MAX_RETRY_TIMES = 3;
-    std::vector<std::thread> threads;
-    std::vector<int> results((table_schemas.count() + batch_count - 1) / batch_count, OB_SUCCESS);
+    
   //   for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
   //     if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
   //       int64_t retry_times = 1;
@@ -1002,6 +996,99 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
   //     }
   //   }
   // }
+    
+    // int64_t thread_cnt = 0;
+    /*
+      表一共分为以下几类
+      core_table
+      core_idx_table
+      core_lob_table
+      sys_table
+      sys_idx_table
+      sys_lob_table
+      先将他们归归类
+    */
+    // std::vector<std::vector<int64_t>> work_queue(7);
+    // for (int64_t i = 0; i < table_schemas.count(); ++i) {
+    //   ObTableSchema &table = table_schemas.at(i);
+    //   if (is_core_table(table.get_table_id())) {
+    //     if (is_core_index_table(table.get_table_id())) {
+    //       work_queue[1].emplace_back(i);
+    //     } else if (is_core_lob_table(table.get_table_id())) {
+    //       work_queue[2].emplace_back(i);
+    //     } else {
+    //       work_queue[0].emplace_back(i);
+    //     }
+    //   } else if (is_sys_table(table.get_table_id())) {
+    //     if (is_sys_index_table(table.get_table_id())) {
+    //       work_queue[4].emplace_back(i);
+    //     } else if (is_sys_lob_table(table.get_table_id())) {
+    //       work_queue[5].emplace_back(i);
+    //     } else {
+    //       work_queue[3].emplace_back(i);
+    //     }
+    //   } else {
+    //     work_queue[6].emplace_back(i);
+    //   }
+    // }
+    // 随后，开始按顺序并发
+    const int64_t MAX_RETRY_TIMES = 3;
+    std::vector<std::thread> threads;
+    int64_t begin = 0;
+    int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
+    int64_t thread_pos = 0;
+    // int64_t thread_cur = 0;
+    // for(auto &list:work_queue) {
+    //   if (list.empty()) {
+    //     continue;
+    //   }
+    //   std::vector<int> results;
+    //   for (int64_t i = 0; i < list.size(); ++i) {
+    //     results.emplace_back(OB_SUCCESS);
+    //     threads.emplace_back([&, i, thread_pos]() {
+    //       lib::set_thread_name("batch_create_schema_sub_thread");
+    //       int64_t retry_times = 1;
+    //       while (OB_SUCC(results[thread_pos])) {
+    //         if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, list[i], list[i] + 1))) {
+    //             LOG_WARN("batch create schema failed", K(results[thread_pos]), "table index", list[i]);
+    //           if ((OB_SCHEMA_EAGAIN == results[thread_pos]
+    //               || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == results[thread_pos])
+    //               && retry_times <= MAX_RETRY_TIMES) {
+    //             retry_times++;
+    //             results[thread_pos] = OB_SUCCESS;
+    //             LOG_INFO("schema error while create table, need retry", KR(results[thread_pos]), K(retry_times));
+    //             ob_usleep(1 * 1000 * 1000L); // 1s
+    //           }
+    //         } else {
+    //           break;
+    //         }
+    //       }
+    //     });
+    //     thread_pos++;
+    //   }
+    //   // 等待并发完成
+    //   for (int64_t i = thread_cur; i < thread_pos; ++i) {
+    //     if (threads[i].joinable()) {
+    //       threads[i].join();
+    //     }
+    //   }
+    //   // 检查结果
+    //   for (int64_t i = thread_cur; i < thread_pos; ++i) {
+    //     if (OB_SUCCESS != results[i]) {
+    //       ret = results[i];
+    //       break;
+    //     }
+    //   }
+    //   thread_cur = thread_pos;
+    //   if (OB_SUCC(ret)) {
+    //     ret = OB_SUCCESS;
+    //   } else {
+    //     break;
+    //   }
+    // }
+    
+    
+    std::vector<int> results((table_schemas.count() + batch_count - 1) / batch_count, OB_SUCCESS);
     for (int64_t i = 0; i < table_schemas.count(); ++i) {
       if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
         LOG_INFO("start batch_create_schema", K(begin), K(i + 1), K(thread_pos));

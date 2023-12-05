@@ -185,6 +185,7 @@ int ObLSTemplateOperator::exec_read(const uint64_t &tenant_id,
                         const common::ObSqlString &sql, ObISQLClient &client,
                         TableOperator *table_operator, common::ObIArray<LS_Result> &ls_res)
 {
+  SHARE_LOG(INFO, "[ObLSTemplateOperator] ObLSTemplateOperator start exec_read", K(tenant_id), K(sql));
   int ret = OB_SUCCESS;
   ls_res.reset();
   if (OB_UNLIKELY(OB_INVALID_TENANT_ID == tenant_id) || OB_ISNULL(table_operator)) {
@@ -229,6 +230,7 @@ int ObLSTemplateOperator::exec_read(const uint64_t &tenant_id,
       }
     }//end else
   }
+  SHARE_LOG(INFO, "[ObLSTemplateOperator] ObLSTemplateOperator end exec_read", K(tenant_id), K(sql));
   return ret;
 }
 
