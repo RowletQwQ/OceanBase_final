@@ -678,6 +678,7 @@ int ObLSServiceHelper::revision_to_equal_status_(const ObLSStatusMachineParamete
   } else if (ls_info.ls_is_creating()) {
     if (!status_info.is_valid()) {
       //create ls
+      LOG_INFO("[REVISION] create ls", K(tenant_id), K(ls_info), K(status_info));
       START_TRANSACTION(GCTX.sql_proxy_, ObLSLifeIAgent::get_exec_tenant_id(tenant_id));
       if (FAILEDx(create_new_ls_in_trans(ls_info.get_ls_id(),
                                          ls_info.get_ls_group_id(),
@@ -687,6 +688,7 @@ int ObLSServiceHelper::revision_to_equal_status_(const ObLSStatusMachineParamete
         LOG_WARN("failed to create new ls in trans", KR(ret), K(ls_info), K(tenant_ls_info), K(working_sw_status));
       }
       END_TRANSACTION(trans);
+      LOG_INFO("[REVISION] create ls end", K(tenant_id), K(ls_info), K(status_info));
     } else if (status_info.ls_is_created() || status_info.ls_is_create_abort()) {
     } else {
       ret = OB_ERR_UNEXPECTED;

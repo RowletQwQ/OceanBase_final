@@ -485,7 +485,7 @@ int ObPrimaryLSService::create_ls_for_create_tenant()
           primary_zone, unit_group_array))) {
     LOG_WARN("failed to get primary zone unit array", KR(ret), K(tenant_schema));
   } else {
-    // ensure __all_ls is emptry
+    // ensure __all_ls is empty
     START_TRANSACTION(GCTX.sql_proxy_, tenant_id_)
     ObArray<share::ObLSAttr> ls_array;
     share::ObLSAttr sys_ls;
