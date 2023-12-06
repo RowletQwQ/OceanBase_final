@@ -1019,44 +1019,46 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     results.reserve(table_schemas.count() / BATCH_INSERT_SCHEMA_CNT + 5);
     int64_t thread_pos = 0;
     // 一开始是核心表
-    bool is_core_table_queue = true;
+    // bool is_core_table_queue = true;
     
     
     for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
       bool is_dep = true;
-      if (is_core_table_queue) {
-        ObTableSchema &table = table_schemas.at(i);
-        if (!is_core_table(table.get_table_id())) {
-          is_core_table_queue = false;
-          LOG_INFO("start batch_create_schema", K(begin), K(i), K(thread_pos));
-          results.emplace_back(OB_SUCCESS);
-          threads.emplace_back([&, i, begin, thread_pos]() {
-            lib::set_thread_name("batch_create_schema_sub_thread");
-            int64_t retry_times = 1;
-            while (OB_SUCC(results[thread_pos])) {
-              if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i))) {
-                LOG_WARN("batch create schema failed", K(results[thread_pos]), "table count", i - begin);
-              if ((OB_SCHEMA_EAGAIN == results[thread_pos]
-                || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == results[thread_pos])
-                && retry_times <= MAX_RETRY_TIMES) {
-                retry_times++;
-                results[thread_pos] = OB_SUCCESS;
-                LOG_INFO("schema error while create table, need retry", KR(results[thread_pos]), K(retry_times));
-                ob_usleep(1 * 1000 * 1000L); // 1s
-              }
-              } else {
-                break;
-              }
-            }
-          });
-          begin = i;
-          thread_pos++;
-        } 
-      }
-      if (!is_core_table_queue && (i + 1 - begin) >= batch_count) {
+      // if (is_core_table_queue) {
+      //   ObTableSchema &table = table_schemas.at(i);
+      //   if (!is_core_table(table.get_table_id())) {
+      //     is_core_table_queue = false;
+      //     LOG_INFO("start batch_create_schema", K(begin), K(i), K(thread_pos));
+      //     results.emplace_back(OB_SUCCESS);
+      //     threads.emplace_back([&, i, begin, thread_pos]() {
+      //       lib::set_thread_name("batch_create_schema_sub_thread");
+      //       int64_t retry_times = 1;
+      //       while (OB_SUCC(results[thread_pos])) {
+      //         if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i))) {
+      //           LOG_WARN("batch create schema failed", K(results[thread_pos]), "table count", i - begin);
+      //         if ((OB_SCHEMA_EAGAIN == results[thread_pos]
+      //           || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == results[thread_pos])
+      //           && retry_times <= MAX_RETRY_TIMES) {
+      //           retry_times++;
+      //           results[thread_pos] = OB_SUCCESS;
+      //           LOG_INFO("schema error while create table, need retry", KR(results[thread_pos]), K(retry_times));
+      //           ob_usleep(1 * 1000 * 1000L); // 1s
+      //         }
+      //         } else {
+      //           break;
+      //         }
+      //       }
+      //     });
+      //     begin = i;
+      //     thread_pos++;
+      //   } 
+      // }
+      if ((i + 1 - begin) >= batch_count) {
         ObTableSchema &table = table_schemas.at(i);
         is_dep = is_sys_lob_table(table.get_table_id()) ||
-                is_sys_index_table(table.get_table_id());              
+                is_sys_index_table(table.get_table_id()) ||
+                is_core_lob_table(table.get_table_id()) ||
+                is_core_index_table(table.get_table_id());
       }
       if (table_schemas.count() == (i + 1) || !is_dep ) {
         LOG_INFO("start batch_create_schema", K(begin), K(i + 1), K(thread_pos));
