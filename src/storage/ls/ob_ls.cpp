@@ -118,6 +118,7 @@ int ObLS::init(const share::ObLSID &ls_id,
                const SCN &create_scn,
                observer::ObIMetaReport *reporter)
 {
+  LOG_INFO("[ObLS] trying to init LS", K(ls_id), K(tenant_id));
   int ret = OB_SUCCESS;
   int tmp_ret = OB_SUCCESS;
   logservice::ObLogService *logservice = MTL(logservice::ObLogService *);
@@ -337,6 +338,7 @@ int ObLS::init(const share::ObLSID &ls_id,
       destroy();
     }
   }
+  LOG_INFO("[ObLS] end to init LS", K(ls_id), K(tenant_id), KR(ret));
   return ret;
 }
 

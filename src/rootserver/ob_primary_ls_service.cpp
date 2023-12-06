@@ -233,6 +233,7 @@ int ObPrimaryLSService::set_tenant_dropping_status_(
 int ObPrimaryLSService::try_set_next_ls_status_(
     const common::ObIArray<ObLSStatusMachineParameter> &status_machine_array)
 {
+  LOG_INFO("[ObPrimary] ");
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
