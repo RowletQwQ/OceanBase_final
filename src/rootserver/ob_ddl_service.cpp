@@ -23166,8 +23166,10 @@ int ObDDLService::init_tenant_schema(
       const int64_t refreshed_schema_version = 0;
       if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
         LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(parallel_create_sys_table_schemas(ddl_operator, tenant_id, tables))) {
+      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
         LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
+      } else if (OB_FAIL(create_sys_table_schemas(ddl_operator, trans, tables))){
+        LOG_WARN("fail to create core tables", KR(ret), K(tenant_id));
       } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
         LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
       } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
@@ -23286,7 +23288,7 @@ int ObDDLService::create_sys_table_schemas(
     ObMySQLTransaction &trans,
     common::ObIArray<ObTableSchema> &tables)
 {
-  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 start create_sys_table_schemas");
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 start create_sys_table_schemas for core table");
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("variable is not init", KR(ret));
@@ -23299,6 +23301,10 @@ int ObDDLService::create_sys_table_schemas(
     for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); i++) {
       ObTableSchema &table = tables.at(i);
       const int64_t table_id = table.get_table_id();
+      // only create core table
+      if (!is_core_table(table_id)) {
+        continue;
+      }
       const ObString &table_name = table.get_table_name();
       const ObString *ddl_stmt = NULL;
       bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
@@ -23312,13 +23318,12 @@ int ObDDLService::create_sys_table_schemas(
       }
     }
 
-    LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_sys_table_schemas");
+    LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_sys_table_schemas for core table");
   }
   return ret;
 }
 
 int ObDDLService::parallel_create_sys_table_schemas(
-      ObDDLOperator &ddl_operator,
       const uint64_t tenant_id,
       common::ObIArray<ObTableSchema> &tables)
 {
@@ -23332,16 +23337,16 @@ int ObDDLService::parallel_create_sys_table_schemas(
     LOG_WARN("ptr is null", KR(ret), KP_(sql_proxy), KP_(schema_service));
   } else {
     // FIXME 锁住系统核心表
-    GCTX.root_service_->set_rs_status(ObRsStatus::);
     // 开始并发创建系统表
     std::vector<std::thread> threads;
     std::vector<int> results;
     int64_t begin = 0;
     int64_t end = 0;
-    int64_t batch_count = tables.count() / 16;
+    const int64_t BATCH_INSERT_SCHEMA_CNT = 80;
+    int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
     int64_t thread_pos = 0;
-    threads.reserve(17);
-    results.reserve(17);
+    threads.reserve(tables.count() / BATCH_INSERT_SCHEMA_CNT + 5);
+    results.reserve(tables.count() / BATCH_INSERT_SCHEMA_CNT + 5);
 
     for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
       bool is_dep = true;
@@ -23354,7 +23359,11 @@ int ObDDLService::parallel_create_sys_table_schemas(
       if (tables.count() == (i + 1) || !is_dep ) {
         LOG_INFO("start batch_create_tenant_schema", K(begin), K(i + 1), K(thread_pos));
         results.emplace_back(OB_SUCCESS);
-        end = i + 1;
+        if(tables.count() != (i + 1) && batch_count > 1) {
+          end = i;
+        } else {
+          end = i + 1;
+        }
         // init trans
         ObMultiVersionSchemaService *this_service = schema_service_;
        
@@ -23371,6 +23380,10 @@ int ObDDLService::parallel_create_sys_table_schemas(
             for (int64_t i = begin; OB_SUCC(tmp_ret) && i < end; i++) {
               ObTableSchema &table = tables.at(i);
               const int64_t table_id = table.get_table_id();
+              if(is_core_table(table_id)) {
+                // skip
+                continue;
+              }
               const ObString &table_name = table.get_table_name();
               const ObString *ddl_stmt = NULL;
               bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
@@ -23404,6 +23417,7 @@ int ObDDLService::parallel_create_sys_table_schemas(
       }
     }
 
+    
     LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_sys_table_schemas");
   }
   return ret;

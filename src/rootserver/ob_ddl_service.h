@@ -2065,7 +2065,6 @@ private:
       ObMySQLTransaction &trans,
       common::ObIArray<share::schema::ObTableSchema> &tables);
   int parallel_create_sys_table_schemas(
-      ObDDLOperator &ddl_operator,
       const uint64_t tenant_id,
       common::ObIArray<share::schema::ObTableSchema> &tables);
   int create_batch_sys_table_schemas(

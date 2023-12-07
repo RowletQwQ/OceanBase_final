@@ -277,6 +277,8 @@ struct ObGlobalContext
 #endif
 
   bool inited_;
+
+  bool is_createing_tenant_;
   transaction::ObIWeakReadService *weak_read_service_;
   share::ObSchemaStatusProxy *schema_status_proxy_;
   int64_t flashback_scn_;
@@ -290,6 +292,9 @@ struct ObGlobalContext
   ObGlobalContext &operator = (const ObGlobalContext &other);
   void init();
   bool is_inited() const { return inited_; }
+
+  bool is_createing_tenant() const { return is_createing_tenant_; }
+  bool set_creating_tenant(const bool is_creating_tenant) { return ATOMIC_BCAS(&is_createing_tenant_, false, is_creating_tenant); }
   // Refer to the high availability zone design document
   //
   bool is_observer() const;

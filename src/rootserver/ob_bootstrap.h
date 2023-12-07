@@ -151,7 +151,7 @@ public:
 private:
   static const int64_t HEAT_BEAT_INTERVAL_US = 2 * 1000 * 1000; //2s
   static const int64_t WAIT_RS_IN_SERVICE_TIMEOUT_US = 40 * 1000 * 1000; //40s
-  static const int64_t BATCH_INSERT_SCHEMA_CNT = 80; // 换用并发，调小这个间隔
+  static const int64_t BATCH_INSERT_SCHEMA_CNT = 60; // 换用并发，调小这个间隔
   virtual int generate_table_schema_array_for_create_partition(
       const share::schema::ObTableSchema &tschema,
       common::ObIArray<share::schema::ObTableSchema> &table_schema_array);
@@ -168,7 +168,8 @@ private:
   static int batch_create_schema(
       ObDDLService &ddl_service,
       common::ObIArray<share::schema::ObTableSchema> &table_schemas,
-      const int64_t begin, const int64_t end);
+      const int64_t begin, const int64_t end, bool is_virtual);
+
   virtual int check_is_already_bootstrap(bool &is_bootstrap);
   virtual int init_global_stat();
   virtual int init_sequence_id();
