@@ -1091,7 +1091,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
         t.join();
       }
     }
-    ret = OB_SUCCESS;
+    // ret = OB_SUCCESS;
     for (const auto& result : results) {
       if (OB_SUCCESS != result) {
         ret = result;

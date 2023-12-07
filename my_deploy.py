@@ -197,8 +197,16 @@ if __name__ == "__main__":
     except mysql.err.Error as e:
         _logger.info("deploy observer failed. ex=%s", str(e))
         _logger.info(traceback.format_exc())
+        perf_cmd = f"bash stop_record.sh ERROR_OCCUR"
+        shell_result = subprocess.run(perf_cmd, shell=True)
+        kill_cmd = f"bash kill_ob.sh"
+        shell_result = subprocess.run(kill_cmd, shell=True)
         exit(1)
     except Exception as ex:
         _logger.info('exception: %s', str(ex))
         _logger.info(traceback.format_exc())
+        perf_cmd = f"bash stop_record.sh ERROR_OCCUR"
+        shell_result = subprocess.run(perf_cmd, shell=True)
+        kill_cmd = f"bash kill_ob.sh"
+        shell_result = subprocess.run(kill_cmd, shell=True)
         exit(1)

@@ -23001,6 +23001,81 @@ int ObDDLService::create_tenant_sys_tablets(
   return ret;
 }
 
+int ObDDLService::batch_create_sys_schema(
+        const uint64_t tenant_id,
+        const ObTenantSchema &tenant_schema,
+        const share::ObTenantRole &tenant_role,
+        const share::SCN &recovery_until_scn,
+        common::ObIArray<share::schema::ObTableSchema> &tables,
+        share::schema::ObSysVariableSchema &sys_variable,
+        const common::ObIArray<common::ObConfigPairs> &init_configs,
+        bool is_creating_standby,
+        const common::ObString &log_restore_source,
+        const int64_t begin,
+        const int64_t end)
+{
+  int ret = OB_SUCCESS;
+  ObSchemaService *schema_service_impl = schema_service_->get_schema_service();
+  ObDDLSQLTransaction trans(schema_service_, true, true, false, false);
+  const int64_t init_schema_version = tenant_schema.get_schema_version();
+  int64_t new_schema_version = OB_INVALID_VERSION;
+  ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
+  //FIXME:(yanmu.ztl) lock tenant's __all_core_table
+  const int64_t refreshed_schema_version = 0;
+  if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+    LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
+  } else if (OB_FAIL(create_batch_sys_table_schemas(ddl_operator, trans, tables, begin, end))) {
+        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
+  } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
+        LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
+  } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
+                 tenant_id, init_schema_version, new_schema_version))) {
+  } else if (OB_FAIL(ddl_operator.replace_sys_variable(
+                 sys_variable, new_schema_version, trans, OB_DDL_ALTER_SYS_VAR))) {
+      LOG_WARN("fail to replace sys variable", KR(ret), K(sys_variable));
+  } else if (OB_FAIL(ddl_operator.init_tenant_env(tenant_schema, sys_variable, tenant_role,
+                                                      recovery_until_scn, init_configs, trans))) {
+        LOG_WARN("init tenant env failed", KR(ret), K(tenant_role), K(recovery_until_scn), K(tenant_schema));
+  } else if (OB_FAIL(ddl_operator.insert_tenant_merge_info(OB_DDL_ADD_TENANT_START, tenant_schema, trans))) {
+        LOG_WARN("fail to insert tenant merge info", KR(ret), K(tenant_schema));
+  } else if (is_meta_tenant(tenant_id) && OB_FAIL(ObServiceEpochProxy::init_service_epoch(
+          trans,
+          tenant_id,
+          0, /*freeze_service_epoch*/
+          0, /*arbitration_service_epoch*/
+          0, /*server_zone_op_service_epoch*/
+          0 /*heartbeat_service_epoch*/))) {
+        LOG_WARN("fail to init service epoch", KR(ret));
+  } else if (is_creating_standby && OB_FAIL(set_log_restore_source(gen_user_tenant_id(tenant_id), log_restore_source, trans))) {
+        LOG_WARN("fail to set_log_restore_source", KR(ret), K(tenant_id), K(log_restore_source));
+  }
+
+  if (trans.is_started()) {
+    int temp_ret = OB_SUCCESS;
+    bool commit = OB_SUCC(ret);
+    if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
+        ret = (OB_SUCC(ret)) ? temp_ret : ret;
+        LOG_WARN("trans end failed", K(commit), K(temp_ret));
+      }
+  }
+
+  if (OB_SUCC(ret) && is_meta_tenant(tenant_id)) {
+    // If tenant config version in RS is valid first and ddl trans doesn't commit,
+    // observer may read from empty __tenant_parameter successfully and raise its tenant config version,
+    // which makes some initial tenant configs are not actually updated before related observer restarts.
+    // To fix this problem, tenant config version in RS should be valid after ddl trans commits.
+    const int64_t config_version = omt::ObTenantConfig::INITIAL_TENANT_CONF_VERSION + 1;
+    const uint64_t user_tenant_id = gen_user_tenant_id(tenant_id);
+    if (OB_FAIL(OTC_MGR.set_tenant_config_version(tenant_id, config_version))) {
+      LOG_WARN("failed to set tenant config version", KR(ret), K(tenant_id));
+    } else if (OB_FAIL(OTC_MGR.set_tenant_config_version(user_tenant_id, config_version))) {
+      LOG_WARN("failed to set tenant config version", KR(ret), K(user_tenant_id));
+    }
+      
+  }
+  return ret;
+}
+
 int ObDDLService::init_tenant_schema(
     const uint64_t tenant_id,
     const ObTenantSchema &tenant_schema,
@@ -23083,62 +23158,107 @@ int ObDDLService::init_tenant_schema(
     LOG_INFO("[CREATE_TENANT] STEP 2.4.2. start init tenant schema", K(tenant_id));
     // 2. init tenant schema
     if (OB_SUCC(ret)) {
-      ObDDLSQLTransaction trans(schema_service_, true, true, false, false);
-      const int64_t init_schema_version = tenant_schema.get_schema_version();
-      int64_t new_schema_version = OB_INVALID_VERSION;
-      ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
-      //FIXME:(yanmu.ztl) lock tenant's __all_core_table
-      const int64_t refreshed_schema_version = 0;
-      if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
-        LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(create_sys_table_schemas(ddl_operator, trans, tables))) {
-        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
-      } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
-        LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
-                 tenant_id, init_schema_version, new_schema_version))) {
-      } else if (OB_FAIL(ddl_operator.replace_sys_variable(
-                 sys_variable, new_schema_version, trans, OB_DDL_ALTER_SYS_VAR))) {
-        LOG_WARN("fail to replace sys variable", KR(ret), K(sys_variable));
-      } else if (OB_FAIL(ddl_operator.init_tenant_env(tenant_schema, sys_variable, tenant_role,
-                                                      recovery_until_scn, init_configs, trans))) {
-        LOG_WARN("init tenant env failed", KR(ret), K(tenant_role), K(recovery_until_scn), K(tenant_schema));
-      } else if (OB_FAIL(ddl_operator.insert_tenant_merge_info(OB_DDL_ADD_TENANT_START, tenant_schema, trans))) {
-        LOG_WARN("fail to insert tenant merge info", KR(ret), K(tenant_schema));
-      } else if (is_meta_tenant(tenant_id) && OB_FAIL(ObServiceEpochProxy::init_service_epoch(
-          trans,
-          tenant_id,
-          0, /*freeze_service_epoch*/
-          0, /*arbitration_service_epoch*/
-          0, /*server_zone_op_service_epoch*/
-          0 /*heartbeat_service_epoch*/))) {
-        LOG_WARN("fail to init service epoch", KR(ret));
-      } else if (is_creating_standby && OB_FAIL(set_log_restore_source(gen_user_tenant_id(tenant_id), log_restore_source, trans))) {
-        LOG_WARN("fail to set_log_restore_source", KR(ret), K(tenant_id), K(log_restore_source));
+      std::vector<std::thread> threads;
+      std::vector<int> results;
+      int64_t begin = 0;
+      int64_t batch_count = tables.count() / 16;
+      int64_t thread_pos = 0;
+      threads.reserve(17);
+      results.reserve(17);
+      for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
+        bool is_dep = true;
+        if ((i + 1 - begin) >= batch_count) {
+          ObTableSchema &table = tables.at(i);
+          is_dep = is_sys_lob_table(table.get_table_id()) ||
+                    is_sys_index_table(table.get_table_id());
+        }
+        if (tables.count() == (i + 1) || !is_dep ) {
+          LOG_INFO("start batch_create_tenant_schema", K(begin), K(i + 1), K(thread_pos));
+          results.emplace_back(OB_SUCCESS);
+          threads.emplace_back([&, i, begin, thread_pos]() {
+          lib::set_thread_name("batch_create_tenant_sub_thread");
+          if (OB_FAIL(batch_create_sys_schema(tenant_id, tenant_schema, tenant_role,
+                                                recovery_until_scn, tables, sys_variable,
+                                                init_configs, is_creating_standby, log_restore_source,
+                                                begin, i + 1))) 
+          {
+            LOG_WARN("batch create sys schema failed", K(results[thread_pos]), "table count", i + 1 - begin);
+          }
+        });
+          begin = i + 1;
+          thread_pos++;
+        }
+        
       }
-
-      if (trans.is_started()) {
-        int temp_ret = OB_SUCCESS;
-        bool commit = OB_SUCC(ret);
-        if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
-          ret = (OB_SUCC(ret)) ? temp_ret : ret;
-          LOG_WARN("trans end failed", K(commit), K(temp_ret));
+      for (auto& t : threads) {
+          if (t.joinable()) {
+            t.join();
+          }
+      }
+        
+      for (const auto& result : results) {
+        if (OB_SUCCESS != result) {
+          ret = result;
+          break;
         }
       }
+      
+      // ObDDLSQLTransaction trans(schema_service_, true, true, false, false);
+      // const int64_t init_schema_version = tenant_schema.get_schema_version();
+      // int64_t new_schema_version = OB_INVALID_VERSION;
+      // ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
+      // //FIXME:(yanmu.ztl) lock tenant's __all_core_table
+      // const int64_t refreshed_schema_version = 0;
+      // if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+      //   LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
+      // } else if (OB_FAIL(create_sys_table_schemas(ddl_operator, trans, tables))) {
+      //   LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
+      // } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
+      //   LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
+      // } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
+      //            tenant_id, init_schema_version, new_schema_version))) {
+      // } else if (OB_FAIL(ddl_operator.replace_sys_variable(
+      //            sys_variable, new_schema_version, trans, OB_DDL_ALTER_SYS_VAR))) {
+      //   LOG_WARN("fail to replace sys variable", KR(ret), K(sys_variable));
+      // } else if (OB_FAIL(ddl_operator.init_tenant_env(tenant_schema, sys_variable, tenant_role,
+      //                                                 recovery_until_scn, init_configs, trans))) {
+      //   LOG_WARN("init tenant env failed", KR(ret), K(tenant_role), K(recovery_until_scn), K(tenant_schema));
+      // } else if (OB_FAIL(ddl_operator.insert_tenant_merge_info(OB_DDL_ADD_TENANT_START, tenant_schema, trans))) {
+      //   LOG_WARN("fail to insert tenant merge info", KR(ret), K(tenant_schema));
+      // } else if (is_meta_tenant(tenant_id) && OB_FAIL(ObServiceEpochProxy::init_service_epoch(
+      //     trans,
+      //     tenant_id,
+      //     0, /*freeze_service_epoch*/
+      //     0, /*arbitration_service_epoch*/
+      //     0, /*server_zone_op_service_epoch*/
+      //     0 /*heartbeat_service_epoch*/))) {
+      //   LOG_WARN("fail to init service epoch", KR(ret));
+      // } else if (is_creating_standby && OB_FAIL(set_log_restore_source(gen_user_tenant_id(tenant_id), log_restore_source, trans))) {
+      //   LOG_WARN("fail to set_log_restore_source", KR(ret), K(tenant_id), K(log_restore_source));
+      // }
 
-      if (OB_SUCC(ret) && is_meta_tenant(tenant_id)) {
-        // If tenant config version in RS is valid first and ddl trans doesn't commit,
-        // observer may read from empty __tenant_parameter successfully and raise its tenant config version,
-        // which makes some initial tenant configs are not actually updated before related observer restarts.
-        // To fix this problem, tenant config version in RS should be valid after ddl trans commits.
-        const int64_t config_version = omt::ObTenantConfig::INITIAL_TENANT_CONF_VERSION + 1;
-        const uint64_t user_tenant_id = gen_user_tenant_id(tenant_id);
-        if (OB_FAIL(OTC_MGR.set_tenant_config_version(tenant_id, config_version))) {
-          LOG_WARN("failed to set tenant config version", KR(ret), K(tenant_id));
-        } else if (OB_FAIL(OTC_MGR.set_tenant_config_version(user_tenant_id, config_version))) {
-          LOG_WARN("failed to set tenant config version", KR(ret), K(user_tenant_id));
-        }
-      }
+      // if (trans.is_started()) {
+      //   int temp_ret = OB_SUCCESS;
+      //   bool commit = OB_SUCC(ret);
+      //   if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
+      //     ret = (OB_SUCC(ret)) ? temp_ret : ret;
+      //     LOG_WARN("trans end failed", K(commit), K(temp_ret));
+      //   }
+      // }
+
+      // if (OB_SUCC(ret) && is_meta_tenant(tenant_id)) {
+      //   // If tenant config version in RS is valid first and ddl trans doesn't commit,
+      //   // observer may read from empty __tenant_parameter successfully and raise its tenant config version,
+      //   // which makes some initial tenant configs are not actually updated before related observer restarts.
+      //   // To fix this problem, tenant config version in RS should be valid after ddl trans commits.
+      //   const int64_t config_version = omt::ObTenantConfig::INITIAL_TENANT_CONF_VERSION + 1;
+      //   const uint64_t user_tenant_id = gen_user_tenant_id(tenant_id);
+      //   if (OB_FAIL(OTC_MGR.set_tenant_config_version(tenant_id, config_version))) {
+      //     LOG_WARN("failed to set tenant config version", KR(ret), K(tenant_id));
+      //   } else if (OB_FAIL(OTC_MGR.set_tenant_config_version(user_tenant_id, config_version))) {
+      //     LOG_WARN("failed to set tenant config version", KR(ret), K(user_tenant_id));
+      //   }
+      // }
       LOG_INFO("[CREATE_TENANT] STEP 2.4.2.9 start get sys ls info by operator");
       ObLSInfo sys_ls_info;
       ObAddrArray addrs;
@@ -23237,6 +23357,43 @@ int ObDDLService::create_sys_table_schemas(
       }
     }
     LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_sys_table_schemas");
+  }
+  return ret;
+}
+
+int ObDDLService::create_batch_sys_table_schemas(
+    ObDDLOperator &ddl_operator,
+    ObMySQLTransaction &trans,
+    common::ObIArray<ObTableSchema> &tables,
+      const int64_t begin,
+      const int64_t end)
+{
+  LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 start create_batch_sys_table_schemas");
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(check_inner_stat())) {
+    LOG_WARN("variable is not init", KR(ret));
+  } else if (OB_ISNULL(sql_proxy_)
+             || OB_ISNULL(schema_service_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("ptr is null", KR(ret), KP_(sql_proxy), KP_(schema_service));
+  } else {
+    // persist __all_core_table's schema in inner table, which is only used for sys views.
+    for (int64_t i = begin; OB_SUCC(ret) && i < end; i++) {
+      ObTableSchema &table = tables.at(i);
+      const int64_t table_id = table.get_table_id();
+      const ObString &table_name = table.get_table_name();
+      const ObString *ddl_stmt = NULL;
+      bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+                                        is_sys_lob_table(table_id));
+      if (OB_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+                                            need_sync_schema_version,
+                                            false /*is_truncate_table*/))) {
+        LOG_WARN("add table schema failed", KR(ret), K(table_id), K(table_name));
+      } else {
+        LOG_INFO("[CREATE_BATCH_SYS_TABLE_SCHEMAS] add table schema succeed", K(i), K(table_id), K(table_name));
+      }
+    }
+    LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_batch_sys_table_schemas");
   }
   return ret;
 }

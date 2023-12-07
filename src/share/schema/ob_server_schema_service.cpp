@@ -5390,6 +5390,7 @@ int ObServerSchemaService::refresh_full_schema(
 
         // refresh sys table schemas
         if (OB_SUCC(ret) && !core_schema_change && sys_schema_change) {
+          // first step , find value from table __all_ddl_operation
           if (OB_FAIL(get_schema_version_in_inner_table(sql_client, schema_status, schema_version))) {
             LOG_WARN("fail to get schema version in inner table", KR(ret), K(schema_status));
           } else if (schema_version <= OB_CORE_SCHEMA_VERSION + 1) {
