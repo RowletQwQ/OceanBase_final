@@ -442,7 +442,8 @@ int ObSchemaUtils::add_sys_table_lob_aux_table(
 // construct inner table schemas in tenant space
 int ObSchemaUtils::construct_inner_table_schemas(
     const uint64_t tenant_id,
-    ObIArray<ObTableSchema> &tables)
+    ObIArray<ObTableSchema> &tables,
+    bool is_parallel /*=false*/)
 {
   int ret = OB_SUCCESS;
   if (is_sys_tenant(tenant_id)) {
@@ -473,7 +474,7 @@ int ObSchemaUtils::construct_inner_table_schemas(
                      KR(ret), K(tenant_id), K(table_schema));
           } else if (!exist) {
             // skip
-          } else if (OB_FAIL(tables.push_back(table_schema))) {
+          } else if (!is_parallel && OB_FAIL(tables.push_back(table_schema))) {
             LOG_WARN("fail to push back table schema", KR(ret), K(table_schema));
           } else if (OB_FAIL(ObSysTableChecker::append_sys_table_index_schemas(
                      tenant_id, table_schema.get_table_id(), tables))) {
@@ -484,6 +485,9 @@ int ObSchemaUtils::construct_inner_table_schemas(
           if (OB_SUCC(ret) && exist) {
             if (OB_FAIL(add_sys_table_lob_aux_table(tenant_id, data_table_id, tables))) {
               LOG_WARN("fail to add lob table to sys table", KR(ret), K(data_table_id));
+            }
+            if (OB_SUCC(ret) && is_parallel && OB_FAIL(tables.push_back(table_schema))) {
+              LOG_WARN("fail to push back table schema", KR(ret), K(table_schema));
             }
           } // end lob aux table
         }

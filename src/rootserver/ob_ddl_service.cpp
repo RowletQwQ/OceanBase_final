@@ -23164,12 +23164,16 @@ int ObDDLService::init_tenant_schema(
       ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
       //FIXME:(yanmu.ztl) lock tenant's __all_core_table
       const int64_t refreshed_schema_version = 0;
-      if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+      // reload tables
+      tables.reset();
+      if (OB_FAIL(ObSchemaUtils::construct_inner_table_schemas(tenant_id, tables, true))) {
+        LOG_WARN("fail to get inner table schemas in tenant space", KR(ret), K(tenant_id));
+      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
+        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
+      } else if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
         LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
       } else if (OB_FAIL(create_sys_table_schemas(ddl_operator, trans, tables))){
         LOG_WARN("fail to create core tables", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
-        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
       } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
         LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
       } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
@@ -23359,11 +23363,7 @@ int ObDDLService::parallel_create_sys_table_schemas(
       if (tables.count() == (i + 1) || !is_dep ) {
         LOG_INFO("start batch_create_tenant_schema", K(begin), K(i + 1), K(thread_pos));
         results.emplace_back(OB_SUCCESS);
-        if(tables.count() != (i + 1) && batch_count > 1) {
-          end = i;
-        } else {
-          end = i + 1;
-        }
+        end = i + 1;
         // init trans
         ObMultiVersionSchemaService *this_service = schema_service_;
        
