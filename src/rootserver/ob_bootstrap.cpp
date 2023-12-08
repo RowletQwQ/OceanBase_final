@@ -978,8 +978,8 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     int64_t normal_table_cnt = 0;
     int64_t virtual_table_cnt = 0;
     int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
-    threads.reserve(table_schemas.count() * 2 / BATCH_INSERT_SCHEMA_CNT + 5);
-    results.reserve(table_schemas.count() * 2 / BATCH_INSERT_SCHEMA_CNT + 5);
+    threads.reserve(table_schemas.count() / BATCH_INSERT_SCHEMA_CNT + 5);
+    results.reserve(table_schemas.count() / BATCH_INSERT_SCHEMA_CNT + 5);
     int64_t thread_pos = 0;
     // 一开始是核心表
     // bool is_core_table_queue = true;
@@ -1002,11 +1002,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
       if (table_schemas.count() == (i + 1) || !is_dep ) {
         normal_table_cnt = 0;
         results.emplace_back(OB_SUCCESS);
-        if(table_schemas.count() != (i + 1) && batch_count > 1) {
-          end = i;
-        } else {
-          end = i + 1;
-        }
+        end = i + 1;
         LOG_INFO("start batch_create_schema", K(begin), K(end), K(thread_pos));
         threads.emplace_back([&, end, begin, thread_pos]() {
           lib::set_thread_name("batch_create_schema_sub_thread");
@@ -1040,7 +1036,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
         break;
       }
     }
-    LOG_INFO("[BOOTSTRAP] Create normal table end", K(ret));
+    // LOG_INFO("[BOOTSTRAP] Create normal table end", K(ret));
     // threads.clear();
     // results.clear();
     // LOG_INFO("[BOOTSTRAP] Create virtual table start");

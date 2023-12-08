@@ -1866,7 +1866,7 @@ int ObMultiVersionSchemaService::broadcast_tenant_schema(
       LOG_WARN("put sys schema to schema cache failed",
                KR(ret), K(tenant_id), KPC(table_schema));
     } else {
-      LOG_INFO("add sys table schema", KR(ret), K(tenant_id), KPC(table_schema));
+      LOG_INFO("add sys table schema", KR(ret), K(tenant_id), K(table_schema->get_table_name()));
     }
   }
   auto attr = SET_USE_500("BroFullSchema", ObCtxIds::SCHEMA_SERVICE);
