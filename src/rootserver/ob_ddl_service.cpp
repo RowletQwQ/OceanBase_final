@@ -23168,12 +23168,12 @@ int ObDDLService::init_tenant_schema(
       tables.reset();
       if (OB_FAIL(ObSchemaUtils::construct_inner_table_schemas(tenant_id, tables, true))) {
         LOG_WARN("fail to get inner table schemas in tenant space", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
-        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
       } else if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
         LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
       } else if (OB_FAIL(create_sys_table_schemas(ddl_operator, trans, tables))){
         LOG_WARN("fail to create core tables", KR(ret), K(tenant_id));
+      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
+        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
       } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
         LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
       } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
@@ -23306,7 +23306,7 @@ int ObDDLService::create_sys_table_schemas(
       ObTableSchema &table = tables.at(i);
       const int64_t table_id = table.get_table_id();
       // only create core table
-      if (!is_core_table(table_id)) {
+      if (!is_core_table(table_id) && !is_ls_reserved_table(table_id)) {
         continue;
       }
       const ObString &table_name = table.get_table_name();
@@ -23380,7 +23380,7 @@ int ObDDLService::parallel_create_sys_table_schemas(
             for (int64_t i = begin; OB_SUCC(tmp_ret) && i < end; i++) {
               ObTableSchema &table = tables.at(i);
               const int64_t table_id = table.get_table_id();
-              if(is_core_table(table_id)) {
+              if(is_core_table(table_id) || is_ls_reserved_table(table_id)) {
                 // skip
                 continue;
               }
