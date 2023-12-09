@@ -983,9 +983,39 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     int64_t thread_pos = 0;
     // 一开始是核心表
     // bool is_core_table_queue = true;
-    
-    
     for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
+      ObTableSchema &table = table_schemas.at(i);
+      uint64_t table_id = table.get_table_id();
+      if(!is_core_table(table_id)) {
+        end = i + 1;
+        int result = OB_SUCCESS;
+        std::thread core_table_th(
+            [&, end, begin]() {
+              lib::set_thread_name("batch_create_core_sub_thread");
+              int64_t retry_times = 1;
+              while (OB_SUCC(result)) {
+                if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, end, false))) {
+                  LOG_WARN("batch create schema failed", K(result), "table count", end - begin);
+                  if (retry_times <= MAX_RETRY_TIMES) {
+                    retry_times++;
+                    result = OB_SUCCESS;
+                    LOG_INFO("schema error while create table, need retry", KR(result), K(retry_times));
+                  }
+                } else {
+                  break;
+                }
+              }
+        });
+        begin = i + 1;
+        // wait for finish
+        core_table_th.join();
+        // get result
+        ret = result;
+        break;
+      }
+    }
+    
+    for (int64_t i = begin; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
       bool is_dep = true;
       ObTableSchema &table = table_schemas.at(i);
       uint64_t table_id = table.get_table_id();
@@ -995,9 +1025,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
       normal_table_cnt++;
       if (normal_table_cnt >= batch_count) {
         is_dep = is_sys_lob_table(table_id) ||
-                is_sys_index_table(table_id) ||
-                is_core_lob_table(table_id) ||
-                is_core_index_table(table_id);
+                is_sys_index_table(table_id);
       }
       if (table_schemas.count() == (i + 1) || !is_dep ) {
         normal_table_cnt = 0;
