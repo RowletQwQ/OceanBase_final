@@ -23168,12 +23168,12 @@ int ObDDLService::init_tenant_schema(
       tables.reset();
       if (OB_FAIL(ObSchemaUtils::construct_inner_table_schemas(tenant_id, tables, true))) {
         LOG_WARN("fail to get inner table schemas in tenant space", KR(ret), K(tenant_id));
+      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
+        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
       } else if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
         LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
       } else if (OB_FAIL(create_sys_table_schemas(ddl_operator, trans, tables))){
         LOG_WARN("fail to create core tables", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(parallel_create_sys_table_schemas(tenant_id, tables))) {
-        LOG_WARN("fail to create sys tables", KR(ret), K(tenant_id));
       } else if (is_user_tenant(tenant_id) && OB_FAIL(set_sys_ls_status(tenant_id))) {
         LOG_WARN("failed to set sys ls status", KR(ret), K(tenant_id));
       } else if (OB_FAIL(schema_service_impl->gen_new_schema_version(
@@ -23183,20 +23183,22 @@ int ObDDLService::init_tenant_schema(
         LOG_WARN("fail to replace sys variable", KR(ret), K(sys_variable));
       } else if (OB_FAIL(ddl_operator.init_tenant_env(tenant_schema, sys_variable, tenant_role,
                                                       recovery_until_scn, init_configs, trans))) {
-        LOG_WARN("init tenant env failed", KR(ret), K(tenant_role), K(recovery_until_scn), K(tenant_schema));
+          LOG_WARN("init tenant env failed", KR(ret), K(tenant_role), K(recovery_until_scn), K(tenant_schema));
       } else if (OB_FAIL(ddl_operator.insert_tenant_merge_info(OB_DDL_ADD_TENANT_START, tenant_schema, trans))) {
-        LOG_WARN("fail to insert tenant merge info", KR(ret), K(tenant_schema));
+          LOG_WARN("fail to insert tenant merge info", KR(ret), K(tenant_schema));
       } else if (is_meta_tenant(tenant_id) && OB_FAIL(ObServiceEpochProxy::init_service_epoch(
-          trans,
-          tenant_id,
-          0, /*freeze_service_epoch*/
-          0, /*arbitration_service_epoch*/
-          0, /*server_zone_op_service_epoch*/
-          0 /*heartbeat_service_epoch*/))) {
-        LOG_WARN("fail to init service epoch", KR(ret));
+            trans,
+            tenant_id,
+            0, /*freeze_service_epoch*/
+            0, /*arbitration_service_epoch*/
+            0, /*server_zone_op_service_epoch*/
+            0 /*heartbeat_service_epoch*/))) {
+          LOG_WARN("fail to init service epoch", KR(ret));
       } else if (is_creating_standby && OB_FAIL(set_log_restore_source(gen_user_tenant_id(tenant_id), log_restore_source, trans))) {
-        LOG_WARN("fail to set_log_restore_source", KR(ret), K(tenant_id), K(log_restore_source));
+          LOG_WARN("fail to set_log_restore_source", KR(ret), K(tenant_id), K(log_restore_source));
       }
+      
+      
 
       if (trans.is_started()) {
         int temp_ret = OB_SUCCESS;
@@ -23342,6 +23344,7 @@ int ObDDLService::parallel_create_sys_table_schemas(
   } else {
     // FIXME 锁住系统核心表
     // 开始并发创建系统表
+    // 先创建普通表
     std::vector<std::thread> threads;
     std::vector<int> results;
     int64_t begin = 0;
@@ -23349,18 +23352,24 @@ int ObDDLService::parallel_create_sys_table_schemas(
     const int64_t BATCH_INSERT_SCHEMA_CNT = 80;
     int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
     int64_t thread_pos = 0;
-    threads.reserve(tables.count() / BATCH_INSERT_SCHEMA_CNT + 5);
-    results.reserve(tables.count() / BATCH_INSERT_SCHEMA_CNT + 5);
+    int64_t normal_table_cnt = 0;
+    int64_t virtual_table_cnt = 0;
+    threads.reserve(tables.count() * 2 / BATCH_INSERT_SCHEMA_CNT + 5);
+    results.reserve(tables.count() * 2 / BATCH_INSERT_SCHEMA_CNT + 5);
 
     for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
       bool is_dep = true;
-      if ((i + 1 - begin) >= batch_count) {
-        ObTableSchema &table = tables.at(i);
+      ObTableSchema &table = tables.at(i);
+      uint64_t table_id = table.get_table_id();
+      if (!is_virtual_table(table_id)) {
+        normal_table_cnt++;
+      }
+      if (normal_table_cnt >= batch_count) {
         is_dep = is_sys_lob_table(table.get_table_id()) ||
-                    is_sys_index_table(table.get_table_id()) ||
-                    is_virtual_table(table.get_table_id());
+                    is_sys_index_table(table.get_table_id());
       }
       if (tables.count() == (i + 1) || !is_dep ) {
+        normal_table_cnt = 0;
         LOG_INFO("start batch_create_tenant_schema", K(begin), K(i + 1), K(thread_pos));
         results.emplace_back(OB_SUCCESS);
         end = i + 1;
@@ -23374,13 +23383,13 @@ int ObDDLService::parallel_create_sys_table_schemas(
           int tmp_ret = OB_SUCCESS;
           const int64_t refreshed_schema_version = 0;
           if (OB_TMP_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
-            LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
+            LOG_WARN("fail to start trans", KR(tmp_ret), K(tenant_id));
           } else {
             // 开始建表
             for (int64_t i = begin; OB_SUCC(tmp_ret) && i < end; i++) {
               ObTableSchema &table = tables.at(i);
               const int64_t table_id = table.get_table_id();
-              if(is_core_table(table_id) || is_ls_reserved_table(table_id)) {
+              if(is_core_table(table_id) || is_ls_reserved_table(table_id) || is_virtual_table(table_id)) {
                 // skip
                 continue;
               }
@@ -23388,10 +23397,14 @@ int ObDDLService::parallel_create_sys_table_schemas(
               const ObString *ddl_stmt = NULL;
               bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
                                         is_sys_lob_table(table_id));
+              bool need_last = (table.is_index_table() || table.is_materialized_view() || table.is_aux_vp_table() || table.is_aux_lob_table()) && need_sync_schema_version;
+              if (need_last) {
+                continue;
+              }
               if (OB_TMP_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
                                             need_sync_schema_version,
                                             false /*is_truncate_table*/))) {
-                LOG_WARN("add table schema failed", KR(ret), K(table_id), K(table_name));
+                LOG_WARN("add table schema failed", KR(tmp_ret), K(table_id), K(table_name));
               } else {
                 LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add table schema succeed", K(i), K(table_id), K(table_name));
               }
@@ -23417,6 +23430,140 @@ int ObDDLService::parallel_create_sys_table_schemas(
       }
     }
 
+    // 随后新建虚拟表
+    threads.clear();
+    results.clear();
+    begin = 0;
+    end = 0;
+    thread_pos = 0;
+    batch_count = BATCH_INSERT_SCHEMA_CNT / 2;
+    const int64_t MAX_RETRY_TIMES = 3;
+    for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
+      bool is_dep = true;
+      ObTableSchema &table = tables.at(i);
+      uint64_t table_id = table.get_table_id();
+      if (is_virtual_table(table_id)) {
+        virtual_table_cnt++;
+      }
+      if (virtual_table_cnt >= batch_count) {
+        is_dep = table.is_index_table() || table.is_materialized_view();
+      }
+      if (tables.count() == (i + 1) || !is_dep ) {
+        virtual_table_cnt = 0;
+        LOG_INFO("start batch_create_tenant_schema", K(begin), K(i + 1), K(thread_pos));
+        results.emplace_back(OB_SUCCESS);
+        end = i + 1;
+        // init trans
+        ObMultiVersionSchemaService *this_service = schema_service_;
+        threads.emplace_back([&, begin, end, thread_pos, this_service](){
+          ObDDLSQLTransaction trans(this_service, true, true, false, false);
+          ObDDLOperator ddl_operator(*this_service, *sql_proxy_);
+          lib::set_thread_name("batch_create_tenant_sub_thread");
+          int tmp_ret = OB_SUCCESS;
+          const int64_t refreshed_schema_version = 0;
+          if (OB_TMP_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+            LOG_WARN("fail to start trans", KR(tmp_ret), K(tenant_id));
+          } else {
+            // 开始建表
+            for (int64_t i = begin; OB_SUCC(tmp_ret) && i < end; i++) {
+              ObTableSchema &table = tables.at(i);
+              const int64_t table_id = table.get_table_id();
+              if(is_core_table(table_id) || is_ls_reserved_table(table_id) || !is_virtual_table(table_id)) {
+                // skip
+                continue;
+              }
+              const ObString &table_name = table.get_table_name();
+              const ObString *ddl_stmt = NULL;
+              bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+                                        is_sys_lob_table(table_id));
+              int64_t retry_times = 1;
+              while (OB_SUCC(tmp_ret)) {
+                if (OB_TMP_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+                                            need_sync_schema_version,
+                                            false /*is_truncate_table*/))) {
+                  if(retry_times <= MAX_RETRY_TIMES) {
+                    LOG_WARN("add table schema failed,need retry", KR(tmp_ret), K(table_id), K(table_name));
+                    tmp_ret = OB_SUCCESS;
+                    retry_times++;
+                  }
+                } else {
+                  LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add table schema succeed", K(i), K(table_id), K(table_name));
+                }
+              }
+            }
+          }
+          results[thread_pos] = tmp_ret;
+        });
+        begin = i + 1;
+        thread_pos++;
+      }
+    }
+    for (auto& t : threads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+        
+    for (const auto& result : results) {
+      if (OB_SUCCESS != result) {
+        ret = result;
+        break;
+      }
+    }
+
+    // // 单独创建需要依赖的表
+    // threads.clear();
+    // results.clear();
+    // thread_pos = 0;
+    // for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
+    //   ObTableSchema &table = tables.at(i);
+    //   const int64_t table_id = table.get_table_id();
+    //   bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+    //                                     is_sys_lob_table(table_id));
+    //   bool need_last = (table.is_index_table() || table.is_materialized_view() || table.is_aux_vp_table() || table.is_aux_lob_table()) && need_sync_schema_version;
+    //   if(is_core_table(table_id) || is_ls_reserved_table(table_id) || !need_last) {
+    //     // skip
+    //     continue;
+    //   }
+    //   results.emplace_back(OB_SUCCESS);
+    //   ObMultiVersionSchemaService *this_service = schema_service_;
+    //   threads.emplace_back([&, i, need_sync_schema_version, thread_pos, this_service](){
+    //     int tmp_ret = OB_SUCCESS;
+    //     lib::set_thread_name("batch_create_tenant_sub_thread");
+    //     ObDDLSQLTransaction trans(this_service, true, true, false, false);
+    //     ObDDLOperator ddl_operator(*this_service, *sql_proxy_);
+    //     const int64_t refreshed_schema_version = 0;
+    //     if (OB_TMP_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+    //       LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
+    //     } else {
+    //       ObTableSchema &table = tables.at(i);
+    //       const int64_t table_id = table.get_table_id();
+    //       const ObString &table_name = table.get_table_name();
+    //       const ObString *ddl_stmt = NULL;
+    //       if (OB_TMP_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+    //                                         need_sync_schema_version,
+    //                                         false /*is_truncate_table*/))) {
+    //         LOG_WARN("add table schema failed", KR(ret), K(table_id), K(table_name));
+    //       } else {
+    //         LOG_INFO("[CREATE_SYS_TABLE_SCHEMAS] add table schema succeed", K(i), K(table_id), K(table_name));
+    //       }
+    //     }
+    //     results[thread_pos] = tmp_ret;
+    //   });
+    // }
+
+    // for (auto& t : threads) {
+    //   if (t.joinable()) {
+    //     t.join();
+    //   }
+    // }
+        
+    // for (const auto& result : results) {
+    //   if (OB_SUCCESS != result) {
+    //     ret = result;
+    //     break;
+    //   }
+    // }
     
     LOG_INFO("[CREATE_TENANT] STEP 2.4.2.2 finish create_sys_table_schemas");
   }
