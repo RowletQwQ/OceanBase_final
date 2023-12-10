@@ -1142,13 +1142,13 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
           continue;
       }
       threads.emplace_back([&, i, thread_pos, need_sync_schema_version]() {
-        ObDDLSQLTransaction trans(ddl_service, true, true, false, false);
-        ObDDLOperator ddl_operator(*ddl_service, *sql_proxy_);
+        ObDDLSQLTransaction trans(&(ddl_service.get_schema_service()), true, true, false, false);
+        ObDDLOperator ddl_operator(ddl_service.get_schema_service(),ddl_service.get_sql_proxy());
         bool is_truncate_table = false;
         int ret = OB_SUCCESS;
         const int64_t refreshed_schema_version = 0;
-        if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
-            LOG_WARN("fail to start trans", KR(ret), K(tenant_id));
+        if (OB_FAIL(trans.start(&ddl_service.get_sql_proxy(), OB_SYS_TENANT_ID, refreshed_schema_version))) {
+            LOG_WARN("fail to start trans", KR(ret));
         } else {
           ObTableSchema &table = table_schemas.at(i);
           const int64_t table_id = table.get_table_id();
