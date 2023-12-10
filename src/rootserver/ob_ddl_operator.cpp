@@ -205,7 +205,7 @@ int ObDDLOperator::create_tenant(ObTenantSchema &tenant_schema,
       LOG_WARN("insert tenant failed", K(tenant_schema), K(ret));
     }
   }
-  LOG_INFO("create tenant", K(ret), "tenant_id", tenant_schema.get_tenant_id(),
+  LOG_INFO("[CREATE_TENANT] create tenant", K(ret), "tenant_id", tenant_schema.get_tenant_id(),
            "cost", ObTimeUtility::current_time() - start);
   return ret;
 }
