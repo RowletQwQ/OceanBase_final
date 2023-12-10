@@ -1141,7 +1141,9 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
       if (!need_last) {
           continue;
       }
+      results.emplace_back(OB_SUCCESS);
       threads.emplace_back([&, i, thread_pos, need_sync_schema_version]() {
+        lib::set_thread_name("create_dep_sub_thread");
         ObDDLSQLTransaction trans(&(ddl_service.get_schema_service()), true, true, false, false);
         ObDDLOperator ddl_operator(ddl_service.get_schema_service(),ddl_service.get_sql_proxy());
         bool is_truncate_table = false;
