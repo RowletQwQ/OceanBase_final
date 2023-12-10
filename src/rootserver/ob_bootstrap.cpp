@@ -973,6 +973,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     const int64_t MAX_RETRY_TIMES = 3;
     std::vector<std::thread> threads;
     std::vector<int> results;
+    int core_table_res = OB_SUCCESS;
     int64_t begin = 0;
     int64_t end = 0;
     int64_t normal_table_cnt = 0;
@@ -988,33 +989,29 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
       uint64_t table_id = table.get_table_id();
       if(!is_core_table(table_id)) {
         end = i + 1;
-        int result = OB_SUCCESS;
-        std::thread core_table_th(
-            [&, end, begin]() {
-              lib::set_thread_name("batch_create_core_sub_thread");
-              int64_t retry_times = 1;
-              while (OB_SUCC(result)) {
-                if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, end, false))) {
-                  LOG_WARN("batch create schema failed", K(result), "table count", end - begin);
-                  if (retry_times <= MAX_RETRY_TIMES) {
-                    retry_times++;
-                    result = OB_SUCCESS;
-                    LOG_INFO("schema error while create table, need retry", KR(result), K(retry_times));
-                  }
-                } else {
-                  break;
-                }
-              }
-        });
-        begin = i + 1;
-        // wait for finish
-        core_table_th.join();
-        // get result
-        ret = result;
         break;
       }
     }
-
+    std::thread core_table_th(
+        [&, end, begin]() {
+          lib::set_thread_name("batch_create_core_sub_thread");
+          int ret = OB_SUCCESS;
+          int64_t retry_times = 1;
+          while (OB_SUCC(core_table_res)) {
+            if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, end, false))) {
+              LOG_WARN("batch create schema failed", K(core_table_res), "table count", end - begin);
+              if (retry_times <= MAX_RETRY_TIMES) {
+                  retry_times++;
+                  core_table_res = OB_SUCCESS;
+                  LOG_INFO("schema error while create table, need retry", KR(core_table_res), K(retry_times));
+                }
+              } else {
+                break;
+              }
+          }
+        core_table_res = ret;
+    });
+    begin = end;
     // 接下来创建普通表
     
     for (int64_t i = begin; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
@@ -1071,6 +1068,11 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     LOG_INFO("[BOOTSTRAP] Create normal table end", K(ret));
     threads.clear();
     results.clear();
+    // 在创建虚拟表之前，需要等待核心表
+    // wait for finish
+    core_table_th.join();
+    // get result
+    ret = core_table_res;
     LOG_INFO("[BOOTSTRAP] Create virtual table start");
     // 接下来创建虚拟表
     // 虚拟表创建的时间比普通表更长
