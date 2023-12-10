@@ -983,16 +983,45 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     results.reserve(table_schemas.count() * 2 / BATCH_INSERT_SCHEMA_CNT + 5);
     int64_t thread_pos = 0;
     // 一开始是核心表
+    // 核心表也需要并发创建
     // bool is_core_table_queue = true;
     for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
       ObTableSchema &table = table_schemas.at(i);
       uint64_t table_id = table.get_table_id();
       if(!is_core_table(table_id)) {
-        end = i + 1;
+        end = i;
         break;
       }
+      if(is_core_index_table(table_id) || is_core_lob_table(table_id)){
+        continue;
+      } else {
+        results.emplace_back(OB_SUCCESS);
+        end = i + 1;
+        threads.emplace_back([&, end, begin, thread_pos]() {
+          lib::set_thread_name("batch_create_core_sub_thread");
+          int64_t retry_times = 1;
+          int ret = OB_SUCCESS;
+          while (OB_SUCC(ret)) {
+            if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, end, false))) {
+              LOG_WARN("batch create schema failed", K(ret), "table count", end - begin);
+              if ((OB_SUCCESS != ret && retry_times <= MAX_RETRY_TIMES)) {
+                retry_times++;
+                ret = OB_SUCCESS;
+                LOG_INFO("schema error while create table, need retry", KR(ret), K(retry_times));
+              }
+            } else {
+              break;
+            }
+          }
+          results[thread_pos] = ret;
+        });
+        thread_pos++;
+        begin = end;
+      }
     }
-    std::thread core_table_th(
+    if(begin != end) {
+      LOG_INFO("has core table left", K(begin), K(end), K(thread_pos));
+      std::thread core_table_th(
         [&, end, begin]() {
           lib::set_thread_name("batch_create_core_sub_thread");
           int ret = OB_SUCCESS;
@@ -1010,13 +1039,30 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
               }
           }
         core_table_res = ret;
-    });
+      });
+      // wait for finish
+      core_table_th.join();
+      // get result
+      ret = core_table_res;
+    }
+    
     begin = end;
     // 在创建普通表之前，需要等待核心表
-    // wait for finish
-    core_table_th.join();
-    // get result
-    ret = core_table_res;
+    for (auto& t : threads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+    // ret = OB_SUCCESS;
+    for (const auto& result : results) {
+      if (OB_SUCCESS != result) {
+        ret = result;
+        break;
+      }
+    }
+    threads.clear();
+    results.clear();
+    thread_pos = 0;
     // 接下来创建普通表
     
     for (int64_t i = begin; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
