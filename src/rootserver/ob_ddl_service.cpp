@@ -23512,7 +23512,6 @@ int ObDDLService::parallel_create_sys_table_schemas(
     end = 0;
     thread_pos = 0;
     batch_count = BATCH_INSERT_SCHEMA_CNT / 2;
-    const int64_t MAX_RETRY_TIMES = 3;
     for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
       bool is_dep = true;
       ObTableSchema &table = tables.at(i);

@@ -1161,6 +1161,14 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
               "cost", end_time-start_time);
         }
       }
+      if (trans.is_started()) {
+          const bool is_commit = (OB_SUCCESS == ret);
+          int tmp_ret = trans.end(is_commit);
+          if (OB_SUCCESS != tmp_ret) {
+            LOG_WARN("end trans failed", K(tmp_ret), K(is_commit));
+            ret = (OB_SUCCESS == ret) ? tmp_ret : ret;
+          }
+      }
     }
     
     LOG_INFO("[BOOTSTRAP] Create virtual table end", K(ret));
