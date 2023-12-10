@@ -1012,6 +1012,11 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
         core_table_res = ret;
     });
     begin = end;
+    // 在创建普通表之前，需要等待核心表
+    // wait for finish
+    core_table_th.join();
+    // get result
+    ret = core_table_res;
     // 接下来创建普通表
     
     for (int64_t i = begin; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
@@ -1068,11 +1073,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     LOG_INFO("[BOOTSTRAP] Create normal table end", K(ret));
     threads.clear();
     results.clear();
-    // 在创建虚拟表之前，需要等待核心表
-    // wait for finish
-    core_table_th.join();
-    // get result
-    ret = core_table_res;
+    
     LOG_INFO("[BOOTSTRAP] Create virtual table start");
     // 接下来创建虚拟表
     // 虚拟表创建的时间比普通表更长
