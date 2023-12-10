@@ -1033,13 +1033,13 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
         normal_table_cnt = 0;
         results.emplace_back(OB_SUCCESS);
         end = i + 1;
-        LOG_INFO("start batch_create_schema", K(begin), K(end), K(thread_pos));
+        LOG_INFO("start normal batch_create_schema", K(begin), K(end), K(thread_pos));
         threads.emplace_back([&, end, begin, thread_pos]() {
           lib::set_thread_name("batch_create_schema_sub_thread");
           int64_t retry_times = 1;
           int ret = OB_SUCCESS;
           while (OB_SUCC(ret)) {
-            if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, end, true))) {
+            if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, end, false))) {
               LOG_WARN("batch create schema failed", K(ret), "table count", end - begin);
               if ((OB_SUCCESS != ret && retry_times <= MAX_RETRY_TIMES)) {
                 retry_times++;

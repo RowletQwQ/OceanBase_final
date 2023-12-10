@@ -1490,7 +1490,7 @@ int ObDDLOperator::create_table(ObTableSchema &table_schema,
         ddl_stmt_str,
         need_sync_schema_version,
         is_truncate_table))) {
-      RS_LOG(WARN, "failed to create table", K(ret));
+      RS_LOG(WARN, "failed to create table", K(table_schema.get_table_name()),KR(ret));
     } else if (OB_FAIL(sync_version_for_cascade_table(tenant_id,
                table_schema.get_depend_table_ids(), trans))) {
       RS_LOG(WARN, "fail to sync cascade depend table", K(ret));
