@@ -857,47 +857,121 @@ int ObBootstrap::construct_all_schema(ObIArray<ObTableSchema> &table_schemas)
     sys_view_schema_creators
   };
 
-  ObTableSchema table_schema;
+  
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("check_inner_stat failed", KR(ret));
   } else if (OB_FAIL(table_schemas.reserve(OB_SYS_TABLE_COUNT))) {
     LOG_WARN("reserve failed", "capacity", OB_SYS_TABLE_COUNT, KR(ret));
   } else {
+    std::vector<std::thread> pre_ths;
+    std::vector<int> th_ret;
+    std::vector<ObSArray<ObTableSchema>> th_table_schemas(ARRAYSIZEOF(creator_ptr_arrays));
+    pre_ths.reserve(ARRAYSIZEOF(creator_ptr_arrays));
+    th_ret.reserve(ARRAYSIZEOF(creator_ptr_arrays));
+    // th_table_schemas.reserve(ARRAYSIZEOF(creator_ptr_arrays));
     HEAP_VAR(ObTableSchema, data_schema) {
       for (int64_t i = 0; OB_SUCC(ret) && i < ARRAYSIZEOF(creator_ptr_arrays); ++i) {
-        for (const schema_create_func *creator_ptr = creator_ptr_arrays[i];
+        th_ret.emplace_back(OB_SUCCESS);
+        pre_ths.emplace_back([&, i](const schema_create_func *creator_ptr_arrays[]) {
+          lib::set_thread_name("PrepareSc");
+          ObSArray<ObTableSchema> my_table_schemas;
+          ObTableSchema table_schema;
+          for (const schema_create_func *creator_ptr = creator_ptr_arrays[i];
              OB_SUCCESS == ret && NULL != *creator_ptr; ++creator_ptr) {
-          table_schema.reset();
-          bool exist = false;
-          if (OB_FAIL(construct_schema(*creator_ptr, table_schema))) {
-            LOG_WARN("construct_schema failed", K(table_schema), KR(ret));
-          } else if (OB_FAIL(ObSysTableChecker::is_inner_table_exist(
-                     OB_SYS_TENANT_ID, table_schema, exist))) {
-            LOG_WARN("fail to check inner table exist",
-                     KR(ret), K(table_schema));
-          } else if (!exist) {
-            // skip
-          } else if (ObSysTableChecker::is_sys_table_has_index(table_schema.get_table_id())) {
-            const int64_t data_table_id = table_schema.get_table_id();
-            if (OB_FAIL(ObSysTableChecker::fill_sys_index_infos(table_schema))) {
-              LOG_WARN("fail to fill sys index infos", KR(ret), K(data_table_id));
-            } else if (OB_FAIL(ObSysTableChecker::append_sys_table_index_schemas(
-                       OB_SYS_TENANT_ID, data_table_id, table_schemas))) {
-              LOG_WARN("fail to append sys table index schemas", KR(ret), K(data_table_id));
+             table_schema.reset();
+            bool exist = false;
+            if (OB_FAIL(construct_schema(*creator_ptr, table_schema))) {
+              LOG_WARN("construct_schema failed", K(table_schema), KR(ret));
+            } else if (OB_FAIL(ObSysTableChecker::is_inner_table_exist(
+                      OB_SYS_TENANT_ID, table_schema, exist))) {
+              LOG_WARN("fail to check inner table exist",
+                      KR(ret), K(table_schema));
+            } else if (!exist) {
+              // skip
+            } else if (ObSysTableChecker::is_sys_table_has_index(table_schema.get_table_id())) {
+              const int64_t data_table_id = table_schema.get_table_id();
+              if (OB_FAIL(ObSysTableChecker::fill_sys_index_infos(table_schema))) {
+                LOG_WARN("fail to fill sys index infos", KR(ret), K(data_table_id));
+              } else if (OB_FAIL(ObSysTableChecker::append_sys_table_index_schemas(
+                       OB_SYS_TENANT_ID, data_table_id, my_table_schemas))) {
+                LOG_WARN("fail to append sys table index schemas", KR(ret), K(data_table_id));
+              }
             }
-          }
 
-          const int64_t data_table_id = table_schema.get_table_id();
-          if (OB_SUCC(ret) && exist) {
-            // process lob aux table
-            if (OB_FAIL(add_sys_table_lob_aux_table(data_table_id, table_schemas))) {
-              LOG_WARN("fail to add lob table to sys table", KR(ret), K(data_table_id));
-            }
-            // push sys table
-            if (OB_SUCC(ret) && OB_FAIL(table_schemas.push_back(table_schema))) {
-              LOG_WARN("push_back failed", KR(ret), K(table_schema));
+            const int64_t data_table_id = table_schema.get_table_id();
+            if (OB_SUCC(ret) && exist) {
+              // process lob aux table
+              if (OB_FAIL(add_sys_table_lob_aux_table(data_table_id, my_table_schemas))) {
+                LOG_WARN("fail to add lob table to sys table", KR(ret), K(data_table_id));
+              }
+              // push sys table
+              if (OB_SUCC(ret) && OB_FAIL(my_table_schemas.push_back(table_schema))) {
+                LOG_WARN("push_back failed", KR(ret), K(table_schema));
+              }
             }
           }
+          th_table_schemas[i] = my_table_schemas;
+          th_ret[i] = ret;
+        }, creator_ptr_arrays);
+
+        // for (const schema_create_func *creator_ptr = creator_ptr_arrays[i];
+        //      OB_SUCCESS == ret && NULL != *creator_ptr; ++creator_ptr) {
+        //   table_schema.reset();
+        //   bool exist = false;
+        //   if (OB_FAIL(construct_schema(*creator_ptr, table_schema))) {
+        //     LOG_WARN("construct_schema failed", K(table_schema), KR(ret));
+        //   } else if (OB_FAIL(ObSysTableChecker::is_inner_table_exist(
+        //              OB_SYS_TENANT_ID, table_schema, exist))) {
+        //     LOG_WARN("fail to check inner table exist",
+        //              KR(ret), K(table_schema));
+        //   } else if (!exist) {
+        //     // skip
+        //   } else if (ObSysTableChecker::is_sys_table_has_index(table_schema.get_table_id())) {
+        //     const int64_t data_table_id = table_schema.get_table_id();
+        //     if (OB_FAIL(ObSysTableChecker::fill_sys_index_infos(table_schema))) {
+        //       LOG_WARN("fail to fill sys index infos", KR(ret), K(data_table_id));
+        //     } else if (OB_FAIL(ObSysTableChecker::append_sys_table_index_schemas(
+        //                OB_SYS_TENANT_ID, data_table_id, table_schemas))) {
+        //       LOG_WARN("fail to append sys table index schemas", KR(ret), K(data_table_id));
+        //     }
+        //   }
+
+        //   const int64_t data_table_id = table_schema.get_table_id();
+        //   if (OB_SUCC(ret) && exist) {
+        //     // process lob aux table
+        //     if (OB_FAIL(add_sys_table_lob_aux_table(data_table_id, table_schemas))) {
+        //       LOG_WARN("fail to add lob table to sys table", KR(ret), K(data_table_id));
+        //     }
+        //     // push sys table
+        //     if (OB_SUCC(ret) && OB_FAIL(table_schemas.push_back(table_schema))) {
+        //       LOG_WARN("push_back failed", KR(ret), K(table_schema));
+        //     }
+        //   }
+        // }
+      }
+    }
+    for(auto &th:pre_ths) {
+      if(th.joinable()) {
+        th.join();
+      }
+    }
+
+    for(auto &r:th_ret) {
+      if(OB_SUCCESS != r) {
+        ret = r;
+        LOG_WARN("construct_schema failed", KR(ret));
+        break;
+      }
+    }
+    if(OB_SUCC(ret)) {
+      for(auto &th_table_sc: th_table_schemas) {
+        for(auto &item: th_table_sc) {
+          if (OB_SUCC(ret) && OB_FAIL(table_schemas.push_back(item))) {
+              LOG_WARN("push_back failed", KR(ret), K(item));
+          }
+        }
+        if(OB_FAIL(ret)) {
+          break;
         }
       }
     }
