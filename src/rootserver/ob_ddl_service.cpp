@@ -23219,20 +23219,25 @@ int ObDDLService::init_tenant_schema(
         }
       }
       LOG_INFO("[CREATE_TENANT] STEP 2.4.2.9 start get sys ls info by operator");
-      ObLSInfo sys_ls_info;
-      ObAddrArray addrs;
-      if (FAILEDx(GCTX.lst_operator_->get(
-          GCONF.cluster_id,
-          tenant_id,
-          SYS_LS,
-          share::ObLSTable::DEFAULT_MODE,
-          sys_ls_info))) {
-        LOG_WARN("fail to get sys ls info by operator", KR(ret), K(tenant_id));
-      } else if (OB_FAIL(sys_ls_info.get_paxos_member_addrs(addrs))) {
-        LOG_WARN("fail to get paxos member addrs", K(ret), K(tenant_id), K(sys_ls_info));
-      } else if (OB_FAIL(publish_schema(tenant_id, addrs))) {
-        LOG_WARN("fail to publish schema", KR(ret), K(tenant_id), K(addrs));
-      }
+      std::thread get_ls_th(
+        [&](){
+          ObLSInfo sys_ls_info;
+          ObAddrArray addrs;
+          if (FAILEDx(GCTX.lst_operator_->get(
+            GCONF.cluster_id,
+            tenant_id,
+            SYS_LS,
+            share::ObLSTable::DEFAULT_MODE,
+            sys_ls_info))) {
+          LOG_WARN("fail to get sys ls info by operator", KR(ret), K(tenant_id));
+          } else if (OB_FAIL(sys_ls_info.get_paxos_member_addrs(addrs))) {
+            LOG_WARN("fail to get paxos member addrs", K(ret), K(tenant_id), K(sys_ls_info));
+          } else if (OB_FAIL(publish_schema(tenant_id, addrs))) {
+            LOG_WARN("fail to publish schema", KR(ret), K(tenant_id), K(addrs));
+          }
+        }
+      );
+      get_ls_th.detach();
     }
     LOG_INFO("[CREATE_TENANT] STEP 2.4.3. start set baseline schema version", K(tenant_id));
     // 3. set baseline schema version
