@@ -226,6 +226,7 @@ int ObHeartbeatService::check_upgrade_compat_()
 int ObHeartbeatService::send_heartbeat_()
 {
   int ret = OB_SUCCESS;
+  return ret;
   ObHBRequestArray hb_requests;
   int64_t tmp_whitelist_epoch_id = palf::INVALID_PROPOSAL_ID;
   if (OB_UNLIKELY(!is_inited_)) {
