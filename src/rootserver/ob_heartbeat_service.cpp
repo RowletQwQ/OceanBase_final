@@ -235,7 +235,7 @@ int ObHeartbeatService::send_heartbeat_()
     ret = OB_ERR_UNEXPECTED;
     HBS_LOG_ERROR("srv_rpc_proxy_ is null", KR(ret), KP(srv_rpc_proxy_));
   } else {
-    ObTimeGuard time_guard("ObHeartbeatService::send_heartbeat_", 2 * 1000 * 1000);
+    ObTimeGuard time_guard("ObHeartbeatService::send_heartbeat_", 200 * 1000);
     // step 1: prepare hb_requests based on the whitelist
     if (OB_FAIL(prepare_hb_requests_(hb_requests, tmp_whitelist_epoch_id))) {
       LOG_WARN("fail to prepare heartbeat requests", KR(ret));

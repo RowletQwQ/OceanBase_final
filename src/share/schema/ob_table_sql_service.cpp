@@ -1162,7 +1162,7 @@ int ObTableSqlService::add_columns_for_core(ObISQLClient &sql_client, const ObTa
   }
 
   if (OB_SUCC(ret) && enable_stash_query) {
-    if (OB_FAIL(trans->do_stash_query_batch_core())) {
+    if (OB_FAIL(trans->do_stash_query_batch())) {
       LOG_WARN("do_stash_query_batch fail", K(ret));
     }
   }
