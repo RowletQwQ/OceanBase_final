@@ -588,18 +588,18 @@ int ObBootstrap::execute_bootstrap(rootserver::ObServerZoneOpService &server_zon
   ObMultiVersionSchemaService &schema_service = ddl_service_.get_schema_service();
 
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(init_system_data())) {
-      LOG_WARN("failed to init system data", KR(ret));
-    } else {
-      std::thread thread([&](){
-        lib::set_thread_name("BootStrapRS");
-        if (OB_FAIL(ddl_service_.refresh_schema(OB_SYS_TENANT_ID))) {
-          LOG_WARN("failed to refresh_schema", K(ret));
-        }
-      });
-      thread.detach();
-    }
+   
+    std::thread thread([&](){
+      lib::set_thread_name("BootStrapRS");
+      if (OB_FAIL(init_system_data())) {
+        LOG_WARN("failed to init system data", KR(ret));
+      } else if (OB_FAIL(ddl_service_.refresh_schema(OB_SYS_TENANT_ID))) {
+        LOG_WARN("failed to refresh_schema", K(ret));
+      }
+    });
+    thread.detach();
   }
+  
   BOOTSTRAP_CHECK_SUCCESS_V2("refresh_schema");
 
   // 如果rootserver就一个，那当然是自己啊，等啥
@@ -950,8 +950,8 @@ int ObBootstrap::construct_all_schema(ObIArray<ObTableSchema> &table_schemas)
   
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("check_inner_stat failed", KR(ret));
-  } else if (OB_FAIL(table_schemas.reserve(OB_SYS_TABLE_COUNT))) {
-    LOG_WARN("reserve failed", "capacity", OB_SYS_TABLE_COUNT, KR(ret));
+  } else if (OB_FAIL(table_schemas.reserve(OB_SYS_TABLE_COUNT << 4))) {
+    LOG_WARN("reserve failed", "capacity", (OB_SYS_TABLE_COUNT << 4), KR(ret));
   } else {
     std::vector<std::thread> pre_ths;
     std::vector<int> th_ret;
@@ -1003,41 +1003,6 @@ int ObBootstrap::construct_all_schema(ObIArray<ObTableSchema> &table_schemas)
           th_table_schemas[i] = my_table_schemas;
           th_ret[i] = ret;
         }, creator_ptr_arrays);
-
-        // for (const schema_create_func *creator_ptr = creator_ptr_arrays[i];
-        //      OB_SUCCESS == ret && NULL != *creator_ptr; ++creator_ptr) {
-        //   table_schema.reset();
-        //   bool exist = false;
-        //   if (OB_FAIL(construct_schema(*creator_ptr, table_schema))) {
-        //     LOG_WARN("construct_schema failed", K(table_schema), KR(ret));
-        //   } else if (OB_FAIL(ObSysTableChecker::is_inner_table_exist(
-        //              OB_SYS_TENANT_ID, table_schema, exist))) {
-        //     LOG_WARN("fail to check inner table exist",
-        //              KR(ret), K(table_schema));
-        //   } else if (!exist) {
-        //     // skip
-        //   } else if (ObSysTableChecker::is_sys_table_has_index(table_schema.get_table_id())) {
-        //     const int64_t data_table_id = table_schema.get_table_id();
-        //     if (OB_FAIL(ObSysTableChecker::fill_sys_index_infos(table_schema))) {
-        //       LOG_WARN("fail to fill sys index infos", KR(ret), K(data_table_id));
-        //     } else if (OB_FAIL(ObSysTableChecker::append_sys_table_index_schemas(
-        //                OB_SYS_TENANT_ID, data_table_id, table_schemas))) {
-        //       LOG_WARN("fail to append sys table index schemas", KR(ret), K(data_table_id));
-        //     }
-        //   }
-
-        //   const int64_t data_table_id = table_schema.get_table_id();
-        //   if (OB_SUCC(ret) && exist) {
-        //     // process lob aux table
-        //     if (OB_FAIL(add_sys_table_lob_aux_table(data_table_id, table_schemas))) {
-        //       LOG_WARN("fail to add lob table to sys table", KR(ret), K(data_table_id));
-        //     }
-        //     // push sys table
-        //     if (OB_SUCC(ret) && OB_FAIL(table_schemas.push_back(table_schema))) {
-        //       LOG_WARN("push_back failed", KR(ret), K(table_schema));
-        //     }
-        //   }
-        // }
       }
     }
     for(auto &th:pre_ths) {
