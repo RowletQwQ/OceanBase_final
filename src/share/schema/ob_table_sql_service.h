@@ -287,7 +287,10 @@ private:
                              const int64_t new_schema_version,
                              common::ObISQLClient &sql_client);
   int add_columns(common::ObISQLClient &sql_client, const ObTableSchema &table);
+  int add_columns_for_core_parallel(const ObTableSchema &table, const int64_t begin, const int64_t end);
   int add_columns_for_core(common::ObISQLClient &sql_client, const ObTableSchema &table);
+
+  int add_columns_for_not_core_parallel(const ObTableSchema &table, const int64_t begin, const int64_t end);
   int add_columns_for_not_core(common::ObISQLClient &sql_client, const ObTableSchema &table);
   int add_constraints(common::ObISQLClient &sql_client, const ObTableSchema &table);
   int add_constraints_for_not_core(common::ObISQLClient &sql_client, const ObTableSchema &table);

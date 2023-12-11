@@ -11,6 +11,8 @@
  */
 
 #define USING_LOG_PREFIX SHARE_SCHEMA
+#include <thread>
+#include <vector>
 #include "ob_table_sql_service.h"
 #include "lib/oblog/ob_log.h"
 #include "lib/oblog/ob_log_module.h"
@@ -1087,6 +1089,92 @@ int ObTableSqlService::add_columns(ObISQLClient &sql_client,
   return ret;
 }
 
+int ObTableSqlService::add_columns_for_core_parallel(const ObTableSchema &table, const int64_t begin, const int64_t end)
+{
+  int ret = OB_SUCCESS;
+  ObMySQLTransaction trans(true);
+  const int64_t tenant_id = table.get_tenant_id();
+  ObDMLSqlSplicer dml;
+  ObCoreTableProxy kv(OB_ALL_COLUMN_TNAME, trans, tenant_id);
+  ObArray<ObCoreTableProxy::UpdateCell> cells;
+  // for batch sql query
+  bool enable_stash_query = false;
+  // ObSqlTransQueryStashDesc *stash_desc;
+  // if (OB_SUCC(ret) && trans.get_enable_query_stash()) {
+  //   enable_stash_query = true;
+  //   if (OB_FAIL(trans.get_stash_query(tenant_id, OB_ALL_COLUMN_HISTORY_TNAME, stash_desc))) {
+  //     LOG_WARN("get_stash_query fail", K(ret), K(tenant_id));
+  //   }
+  // }
+  for (ObTableSchema::const_column_iterator iter = table.column_begin() + begin;
+      OB_SUCC(ret) && iter != table.column_begin() + end; ++iter) {
+      ObColumnSchemaV2 column = (**iter);
+      column.set_schema_version(table.get_schema_version());
+      column.set_tenant_id(table.get_tenant_id());
+      column.set_table_id(table.get_table_id());
+      dml.reset();
+      cells.reuse();
+      int64_t affected_rows = 0;
+      if (OB_FAIL(gen_column_dml(tenant_id, column, dml))) {
+        LOG_WARN("gen column dml failed", K(ret));
+      } else if (OB_FAIL(dml.splice_core_cells(kv, cells))) {
+        LOG_WARN("splice core cells failed", K(ret));
+      } else if (OB_FAIL(kv.replace_row(cells, affected_rows))) {
+        LOG_WARN("failed to replace row", K(ret));
+      }
+      if (OB_FAIL(ret)) {
+      } else if (enable_stash_query) {
+        // const int64_t is_deleted = 0;
+        // if (OB_FAIL(dml.add_column("is_deleted", is_deleted))) {
+        //   LOG_WARN("add column failed", K(ret));
+        // } else if (stash_desc->get_stash_query().empty()) {
+        //   if (OB_FAIL(dml.splice_insert_sql_without_plancache(OB_ALL_COLUMN_HISTORY_TNAME, stash_desc->get_stash_query()))) {
+        //     LOG_WARN("dml splice_insert_sql fail", K(ret));
+        //   }
+        // } else {
+        //   ObSqlString value_str;
+        //   if (OB_FAIL(dml.splice_values(value_str))) {
+        //     LOG_WARN("splice_values failed", K(ret));
+        //   } else if (OB_FAIL(stash_desc->get_stash_query().append_fmt(", (%s)", value_str.ptr()))) {
+        //     LOG_WARN("append_fmt failed", K(value_str), K(ret));
+        //   }
+        // }
+        // if (OB_SUCC(ret)) {
+        //   stash_desc->add_row_cnt(1);
+        // }
+      } else {
+        ObDMLExecHelper exec(trans, tenant_id);
+        const int64_t is_deleted = 0;
+        if (OB_FAIL(dml.add_column("is_deleted", is_deleted))) {
+          LOG_WARN("add column failed", K(ret));
+        } else if (OB_FAIL(exec.exec_insert(OB_ALL_COLUMN_HISTORY_TNAME, dml, affected_rows))) {
+          LOG_WARN("execute insert failed", K(ret));
+        } else if (!is_single_row(affected_rows)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("affected_rows unexpected to be one", K(affected_rows), K(ret));
+        }
+      }
+  }
+  if (OB_SUCC(ret) && enable_stash_query) {
+    if (OB_FAIL(trans.do_stash_query_batch())) {
+      LOG_WARN("do_stash_query_batch fail", K(ret));
+    }
+  }
+  if (OB_SUCC(ret) && trans.is_started()) {
+    int tmp_ret = OB_SUCCESS;
+    if (OB_SUCCESS != (tmp_ret = trans.end(OB_SUCC(ret)))) {
+      LOG_WARN("failed to commit trans", KR(ret), KR(tmp_ret));
+      ret = OB_SUCC(ret) ? tmp_ret : ret;
+    }
+  }
+  return ret;
+}
+
+int ObTableSqlService::add_columns_for_not_core_parallel(const ObTableSchema &table, const int64_t begin, const int64_t end)
+{
+  int ret = OB_SUCCESS;
+  return ret;
+}
 int ObTableSqlService::add_columns_for_core(ObISQLClient &sql_client, const ObTableSchema &table)
 {
   int ret = OB_SUCCESS;
@@ -1102,70 +1190,99 @@ int ObTableSqlService::add_columns_for_core(ObISQLClient &sql_client, const ObTa
     LOG_WARN("failed to load kv for update", K(ret));
   }
   // for batch sql query
-  bool enable_stash_query = false;
-  ObSqlTransQueryStashDesc *stash_desc;
-  ObMySQLTransaction* trans = dynamic_cast<ObMySQLTransaction*>(&sql_client);
-  if (OB_SUCC(ret) && trans != nullptr && trans->get_enable_query_stash()) {
-    enable_stash_query = true;
-    if (OB_FAIL(trans->get_stash_query(tenant_id, OB_ALL_COLUMN_HISTORY_TNAME, stash_desc))) {
-      LOG_WARN("get_stash_query fail", K(ret), K(tenant_id));
-    }
-  }
+  // bool enable_stash_query = false;
+  // ObSqlTransQueryStashDesc *stash_desc;
+  // ObMySQLTransaction* trans = dynamic_cast<ObMySQLTransaction*>(&sql_client);
+  // if (OB_SUCC(ret) && trans != nullptr && trans->get_enable_query_stash()) {
+  //   enable_stash_query = true;
+  //   if (OB_FAIL(trans->get_stash_query(tenant_id, OB_ALL_COLUMN_HISTORY_TNAME, stash_desc))) {
+  //     LOG_WARN("get_stash_query fail", K(ret), K(tenant_id));
+  //   }
+  // }
+  const int64_t batch_size = 200;
+  int64_t begin = 0;
+  int64_t end = 0;
+  int64_t thread_pos = 0;
+  std::vector<std::thread> core_th;
+  std::vector<int> results;
+  core_th.reserve((table.column_end() - table.column_begin()) / batch_size + 5);
+  results.reserve((table.column_end() - table.column_begin()) / batch_size + 5);
+
   for (ObTableSchema::const_column_iterator iter = table.column_begin();
       OB_SUCC(ret) && iter != table.column_end(); ++iter) {
-    ObColumnSchemaV2 column = (**iter);
-    column.set_schema_version(table.get_schema_version());
-    column.set_tenant_id(table.get_tenant_id());
-    column.set_table_id(table.get_table_id());
-    dml.reset();
-    cells.reuse();
-    int64_t affected_rows = 0;
-    if (OB_FAIL(gen_column_dml(tenant_id, column, dml))) {
-      LOG_WARN("gen column dml failed", K(ret));
-    } else if (OB_FAIL(dml.splice_core_cells(kv, cells))) {
-      LOG_WARN("splice core cells failed", K(ret));
-    } else if (OB_FAIL(kv.replace_row(cells, affected_rows))) {
-      LOG_WARN("failed to replace row", K(ret));
+      end++;
+    if(end - begin >= batch_size || table.column_begin() + end == table.column_end()) {
+      results.emplace_back(OB_SUCCESS);
+      core_th.emplace_back([&, begin, end, thread_pos](){
+        results[thread_pos] = add_columns_for_core_parallel(table, begin, end);
+      });
+      thread_pos++;
     }
-    if (OB_FAIL(ret)) {
-    } else if (enable_stash_query) {
-      const int64_t is_deleted = 0;
-      if (OB_FAIL(dml.add_column("is_deleted", is_deleted))) {
-        LOG_WARN("add column failed", K(ret));
-      } else if (stash_desc->get_stash_query().empty()) {
-        if (OB_FAIL(dml.splice_insert_sql_without_plancache(OB_ALL_COLUMN_HISTORY_TNAME, stash_desc->get_stash_query()))) {
-          LOG_WARN("dml splice_insert_sql fail", K(ret));
-        }
-      } else {
-        ObSqlString value_str;
-        if (OB_FAIL(dml.splice_values(value_str))) {
-          LOG_WARN("splice_values failed", K(ret));
-        } else if (OB_FAIL(stash_desc->get_stash_query().append_fmt(", (%s)", value_str.ptr()))) {
-          LOG_WARN("append_fmt failed", K(value_str), K(ret));
-        }
-      }
-      if (OB_SUCC(ret)) {
-        stash_desc->add_row_cnt(1);
-      }
-    } else {
-      ObDMLExecHelper exec(sql_client, tenant_id);
-      const int64_t is_deleted = 0;
-      if (OB_FAIL(dml.add_column("is_deleted", is_deleted))) {
-        LOG_WARN("add column failed", K(ret));
-      } else if (OB_FAIL(exec.exec_insert(OB_ALL_COLUMN_HISTORY_TNAME, dml, affected_rows))) {
-        LOG_WARN("execute insert failed", K(ret));
-      } else if (!is_single_row(affected_rows)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("affected_rows unexpected to be one", K(affected_rows), K(ret));
-      }
+    // ObColumnSchemaV2 column = (**iter);
+    // column.set_schema_version(table.get_schema_version());
+    // column.set_tenant_id(table.get_tenant_id());
+    // column.set_table_id(table.get_table_id());
+    // dml.reset();
+    // cells.reuse();
+    // int64_t affected_rows = 0;
+    // if (OB_FAIL(gen_column_dml(tenant_id, column, dml))) {
+    //   LOG_WARN("gen column dml failed", K(ret));
+    // } else if (OB_FAIL(dml.splice_core_cells(kv, cells))) {
+    //   LOG_WARN("splice core cells failed", K(ret));
+    // } else if (OB_FAIL(kv.replace_row(cells, affected_rows))) {
+    //   LOG_WARN("failed to replace row", K(ret));
+    // }
+    // if (OB_FAIL(ret)) {
+    // } else if (enable_stash_query) {
+    //   const int64_t is_deleted = 0;
+    //   if (OB_FAIL(dml.add_column("is_deleted", is_deleted))) {
+    //     LOG_WARN("add column failed", K(ret));
+    //   } else if (stash_desc->get_stash_query().empty()) {
+    //     if (OB_FAIL(dml.splice_insert_sql_without_plancache(OB_ALL_COLUMN_HISTORY_TNAME, stash_desc->get_stash_query()))) {
+    //       LOG_WARN("dml splice_insert_sql fail", K(ret));
+    //     }
+    //   } else {
+    //     ObSqlString value_str;
+    //     if (OB_FAIL(dml.splice_values(value_str))) {
+    //       LOG_WARN("splice_values failed", K(ret));
+    //     } else if (OB_FAIL(stash_desc->get_stash_query().append_fmt(", (%s)", value_str.ptr()))) {
+    //       LOG_WARN("append_fmt failed", K(value_str), K(ret));
+    //     }
+    //   }
+    //   if (OB_SUCC(ret)) {
+    //     stash_desc->add_row_cnt(1);
+    //   }
+    // } else {
+    //   ObDMLExecHelper exec(sql_client, tenant_id);
+    //   const int64_t is_deleted = 0;
+    //   if (OB_FAIL(dml.add_column("is_deleted", is_deleted))) {
+    //     LOG_WARN("add column failed", K(ret));
+    //   } else if (OB_FAIL(exec.exec_insert(OB_ALL_COLUMN_HISTORY_TNAME, dml, affected_rows))) {
+    //     LOG_WARN("execute insert failed", K(ret));
+    //   } else if (!is_single_row(affected_rows)) {
+    //     ret = OB_ERR_UNEXPECTED;
+    //     LOG_WARN("affected_rows unexpected to be one", K(affected_rows), K(ret));
+    //   }
+    // }
+  }
+
+  for (auto &th: core_th) {
+    if(th.joinable()) {
+      th.join();
     }
   }
 
-  if (OB_SUCC(ret) && enable_stash_query) {
-    if (OB_FAIL(trans->do_stash_query_batch_core())) {
-      LOG_WARN("do_stash_query_batch fail", K(ret));
+  for (auto &res: results) {
+    if (OB_SUCCESS != res) {
+      ret = res;
+      break;
     }
   }
+  // if (OB_SUCC(ret) && enable_stash_query) {
+  //   if (OB_FAIL(trans->do_stash_query_batch())) {
+  //     LOG_WARN("do_stash_query_batch fail", K(ret));
+  //   }
+  // }
 
   return ret;
 }
