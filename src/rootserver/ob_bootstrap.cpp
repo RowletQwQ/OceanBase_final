@@ -776,49 +776,139 @@ int ObBootstrap::create_all_partitions()
   int ret = OB_SUCCESS;
   ObArray<uint64_t> sys_table_ids;
   ObArray<int64_t> partition_nums;
-
+  int64_t thread_pos = 0;
+  std::vector<int> th_ret;
+  std::vector<std::thread> create_ths;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("check_inner_stat failed", K(ret));
   } else {
-    ObMySQLTransaction trans;
-    ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
-    ObTableCreator table_creator(OB_SYS_TENANT_ID,
+    // create core table partition
+    for (int64_t i = 0; OB_SUCC(ret) && NULL != core_table_schema_creators[i]; ++i) {
+      th_ret.emplace_back(OB_SUCCESS);
+      create_ths.emplace_back(
+        [&, i, thread_pos](){
+          int ret = OB_SUCCESS;
+          ObMySQLTransaction trans;
+          ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
+          ObTableCreator table_creator(OB_SYS_TENANT_ID,
                                  SCN::base_scn(),
                                  trans);
-    if (OB_FAIL(trans.start(&sql_proxy, OB_SYS_TENANT_ID))) {
-      LOG_WARN("fail to start trans", KR(ret));
-    } else if (OB_FAIL(table_creator.init(false/*need_tablet_cnt_check*/))) {
-      LOG_WARN("fail to init tablet creator", KR(ret));
-    } else {
-      // create core table partition
-      for (int64_t i = 0; OB_SUCC(ret) && NULL != core_table_schema_creators[i]; ++i) {
-        if (OB_FAIL(prepare_create_partition(
-            table_creator, core_table_schema_creators[i]))) {
-          LOG_WARN("prepare create partition fail", K(ret));
-        }
-      }
-      // create sys table partition
-      for (int64_t i = 0; OB_SUCC(ret) && NULL != sys_table_schema_creators[i]; ++i) {
-        if (OB_FAIL(prepare_create_partition(
-            table_creator, sys_table_schema_creators[i]))) {
-          LOG_WARN("prepare create partition fail", K(ret));
-        }
-      }
-      // execute creating tablet
-      if (OB_SUCC(ret)) {
-        if (OB_FAIL(table_creator.execute())) {
-          LOG_WARN("execute create partition failed", K(ret));
-        }
+          lib::set_thread_name("CreateSySPart");
+          if (OB_FAIL(trans.start(&sql_proxy, OB_SYS_TENANT_ID))) {
+            LOG_WARN("fail to start trans", KR(ret));
+          } else if (OB_FAIL(table_creator.init(false/*need_tablet_cnt_check*/))) {
+            LOG_WARN("fail to init tablet creator", KR(ret));
+          } else if (OB_FAIL(prepare_create_partition(
+            table_creator, core_table_schema_creators[i]))){
+            LOG_WARN("prepare create partition fail", K(ret));
+          }
+          if (OB_SUCC(ret)) {
+            if (OB_FAIL(table_creator.execute())) {
+              LOG_WARN("execute create partition failed", K(ret));
+            }
+          }
+          if (trans.is_started()) {
+            int temp_ret = OB_SUCCESS;
+            bool commit = OB_SUCC(ret);
+            if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
+              ret = (OB_SUCC(ret)) ? temp_ret : ret;
+              LOG_WARN("trans end failed", K(commit), K(temp_ret));
+            }
+          }
+          th_ret[thread_pos] = ret;
+        });
+      thread_pos++;
+    }
+    // create sys table partition
+    for (int64_t i = 0; OB_SUCC(ret) && NULL != sys_table_schema_creators[i]; ++i) {
+      th_ret.emplace_back(OB_SUCCESS);
+      create_ths.emplace_back(
+        [&, i, thread_pos](){
+          int ret = OB_SUCCESS;
+          ObMySQLTransaction trans;
+          ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
+          ObTableCreator table_creator(OB_SYS_TENANT_ID,
+                                 SCN::base_scn(),
+                                 trans);
+          lib::set_thread_name("CreateSySPart");
+          if (OB_FAIL(trans.start(&sql_proxy, OB_SYS_TENANT_ID))) {
+            LOG_WARN("fail to start trans", KR(ret));
+          } else if (OB_FAIL(table_creator.init(false/*need_tablet_cnt_check*/))) {
+            LOG_WARN("fail to init tablet creator", KR(ret));
+          } else if (OB_FAIL(prepare_create_partition(
+            table_creator, sys_table_schema_creators[i]))){
+            LOG_WARN("prepare create partition fail", K(ret));
+          }
+          if (OB_SUCC(ret)) {
+            if (OB_FAIL(table_creator.execute())) {
+              LOG_WARN("execute create partition failed", K(ret));
+            }
+          }
+          if (trans.is_started()) {
+            int temp_ret = OB_SUCCESS;
+            bool commit = OB_SUCC(ret);
+            if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
+              ret = (OB_SUCC(ret)) ? temp_ret : ret;
+              LOG_WARN("trans end failed", K(commit), K(temp_ret));
+            }
+          }
+          th_ret[thread_pos] = ret;
+        });
+      thread_pos++;
+    }
+
+    for (auto &th:create_ths) {
+      if(th.joinable()) {
+        th.join();
       }
     }
-    if (trans.is_started()) {
-      int temp_ret = OB_SUCCESS;
-      bool commit = OB_SUCC(ret);
-      if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
-        ret = (OB_SUCC(ret)) ? temp_ret : ret;
-        LOG_WARN("trans end failed", K(commit), K(temp_ret));
+
+    for (auto &re:th_ret) {
+      if(OB_FAIL(re)) {
+        LOG_WARN("create partition failed", K(re));
+        break;
       }
     }
+
+    // ObMySQLTransaction trans;
+    // ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
+    // ObTableCreator table_creator(OB_SYS_TENANT_ID,
+    //                              SCN::base_scn(),
+    //                              trans);
+    // if (OB_FAIL(trans.start(&sql_proxy, OB_SYS_TENANT_ID))) {
+    //   LOG_WARN("fail to start trans", KR(ret));
+    // } else if (OB_FAIL(table_creator.init(false/*need_tablet_cnt_check*/))) {
+    //   LOG_WARN("fail to init tablet creator", KR(ret));
+    // } else {
+    //   // create core table partition
+    //   for (int64_t i = 0; OB_SUCC(ret) && NULL != core_table_schema_creators[i]; ++i) {
+    //     if (OB_FAIL(prepare_create_partition(
+    //         table_creator, core_table_schema_creators[i]))) {
+    //       LOG_WARN("prepare create partition fail", K(ret));
+    //     }
+    //   }
+    //   // create sys table partition
+    //   for (int64_t i = 0; OB_SUCC(ret) && NULL != sys_table_schema_creators[i]; ++i) {
+    //     if (OB_FAIL(prepare_create_partition(
+    //         table_creator, sys_table_schema_creators[i]))) {
+    //       LOG_WARN("prepare create partition fail", K(ret));
+    //     }
+    //   }
+    //   // execute creating tablet
+    //   if (OB_SUCC(ret)) {
+    //     if (OB_FAIL(table_creator.execute())) {
+    //       LOG_WARN("execute create partition failed", K(ret));
+    //     }
+    //   }
+    // }
+    // if (trans.is_started()) {
+    //   int temp_ret = OB_SUCCESS;
+    //   bool commit = OB_SUCC(ret);
+    //   if (OB_SUCCESS != (temp_ret = trans.end(commit))) {
+    //     ret = (OB_SUCC(ret)) ? temp_ret : ret;
+    //     LOG_WARN("trans end failed", K(commit), K(temp_ret));
+    //   }
+    // }
   }
 
   LOG_INFO("finish creating system tables", K(ret));
